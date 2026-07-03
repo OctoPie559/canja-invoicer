@@ -97,6 +97,8 @@ src/
     pdf/                     # @react-pdf/renderer invoice templates
     storage/                 # R2 adapter (logos, generated PDFs)
   components/                # UI components (client-side role checks are UX only)
+    ui/                      # shadcn/ui primitives (radix-lyra style) — add via
+                             # `npx shadcn add <component>`; build screens from these
 tests/
   services/                  # Vitest — money math, status transitions, snapshots
   isolation/                 # the explicit cross-tenant isolation tests (§9 of brief)
@@ -303,3 +305,4 @@ This is a financial tool, so tests are part of every slice's deliverable, not a 
 | Kenyan-entity payout prerequisites (KRA PIN, registration, bank) | Open — confirm before slice 8 |
 | Recurring: auto-issue vs draft-per-run default | Open — decide in slice 7; schema supports both |
 | Branch flow: slice → `staging` (staging env) → `main` (production); verifier gate applies to slice merges into either protected branch | **Locked** (user decision, 2026-07-03) |
+| Component library: **shadcn/ui** (radix-lyra style, neutral base, lucide icons, user-selected theme in `globals.css`). All UI builds on `src/components/ui` primitives; no bespoke one-off styling for things a primitive covers. | **Locked** (user decision, 2026-07-03) |

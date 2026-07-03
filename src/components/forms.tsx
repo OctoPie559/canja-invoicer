@@ -9,8 +9,28 @@ import {
   createOrganizationAction,
   inviteMemberAction,
 } from "@/app/actions/organizations";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const initialState: ActionState = { error: null };
+
+function FormError({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <Alert variant="destructive" className="w-full">
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
+  );
+}
 
 export function CreateOrgForm() {
   const [state, action, pending] = useActionState(
@@ -19,28 +39,26 @@ export function CreateOrgForm() {
   );
   return (
     <form action={action} className="space-y-3">
-      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <input
-        name="name"
-        required
-        placeholder="Organization name"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <select
-        name="type"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-        defaultValue="personal"
-      >
-        <option value="personal">Personal</option>
-        <option value="business">Business</option>
-      </select>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+      <FormError error={state.error} />
+      <div className="space-y-2">
+        <Label htmlFor="org-name">Organization name</Label>
+        <Input id="org-name" name="name" required />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="org-type">Type</Label>
+        <Select name="type" defaultValue="personal">
+          <SelectTrigger id="org-type" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="personal">Personal</SelectItem>
+            <SelectItem value="business">Business</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button type="submit" disabled={pending}>
         {pending ? "Creating…" : "Create organization"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -55,33 +73,35 @@ export function InviteMemberForm({
     initialState,
   );
   return (
-    <form action={action} className="flex flex-wrap items-start gap-2">
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="teammate@example.com"
-        className="rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <select
-        name="role"
-        defaultValue="member"
-        className="rounded border border-neutral-300 px-3 py-2 text-sm"
-      >
-        <option value="admin">Admin</option>
-        <option value="member">Member</option>
-        <option value="viewer">Viewer</option>
-      </select>
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <div className="space-y-2">
+        <Label htmlFor="invite-email">Email</Label>
+        <Input
+          id="invite-email"
+          name="email"
+          type="email"
+          required
+          placeholder="teammate@example.com"
+          className="w-56"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="invite-role">Role</Label>
+        <Select name="role" defaultValue="member">
+          <SelectTrigger id="invite-role" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="member">Member</SelectItem>
+            <SelectItem value="viewer">Viewer</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button type="submit" disabled={pending}>
         {pending ? "Inviting…" : "Invite"}
-      </button>
-      {state.error && (
-        <p className="w-full text-sm text-red-600">{state.error}</p>
-      )}
+      </Button>
+      <FormError error={state.error} />
     </form>
   );
 }
@@ -97,14 +117,10 @@ export function AcceptInvitationButton({
   );
   return (
     <form action={action} className="space-y-2">
-      {state.error && <p className="text-sm text-red-600">{state.error}</p>}
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+      <FormError error={state.error} />
+      <Button type="submit" disabled={pending}>
         {pending ? "Joining…" : "Accept invitation"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -112,14 +128,15 @@ export function AcceptInvitationButton({
 export function SignOutButton() {
   const router = useRouter();
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       onClick={async () => {
         await authClient.signOut();
         router.push("/login");
       }}
-      className="text-sm text-neutral-600 underline"
     >
       Sign out
-    </button>
+    </Button>
   );
 }

@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -30,45 +34,44 @@ export default function SignupPage() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="text-base font-medium">Create your account</h2>
-      <p className="text-sm text-neutral-600">
+      <h2 className="font-heading text-base font-medium">
+        Create your account
+      </h2>
+      <p className="text-sm text-muted-foreground">
         A verification email will be sent. You can explore right away;
         verification is required before sending invoices.
       </p>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <input
-        name="name"
-        required
-        placeholder="Your name"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="Email"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <input
-        name="password"
-        type="password"
-        required
-        minLength={8}
-        placeholder="Password (min 8 characters)"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="name">Your name</Label>
+        <Input id="name" name="name" required />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" name="email" type="email" required />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">Password (min 8 characters)</Label>
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minLength={8}
+        />
+      </div>
+      <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Creating…" : "Create account"}
-      </button>
-      <p className="text-sm text-neutral-600">
+      </Button>
+      <p className="text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="underline">
-          Sign in
-        </Link>
+        <Button asChild variant="link" size="xs" className="px-0">
+          <Link href="/login">Sign in</Link>
+        </Button>
       </p>
     </form>
   );
