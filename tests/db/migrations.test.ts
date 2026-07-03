@@ -84,6 +84,19 @@ describe("migrations", () => {
     expect(policyTables).toEqual(orgTables);
   });
 
+  it("grants invoicer_app membership to the migration/login role", async () => {
+    // SET LOCAL ROLE invoicer_app fails with 42501 unless the connecting
+    // role is a member — pg_has_role is vacuously true for superusers, so
+    // assert the actual membership row instead
+    const memberships = rows(await db.execute(
+      sql`SELECT m.member::regrole::text AS grantee
+          FROM pg_auth_members m
+          JOIN pg_roles r ON r.oid = m.roleid
+          WHERE r.rolname = 'invoicer_app'`,
+    ));
+    expect(memberships.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("revokes UPDATE and DELETE on audit_log from the app role", async () => {
     const result = rows(await db.execute(
       sql`SELECT privilege_type FROM information_schema.role_table_grants
