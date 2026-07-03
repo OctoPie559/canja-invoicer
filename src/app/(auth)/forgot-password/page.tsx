@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
@@ -28,7 +32,7 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <p className="text-sm text-neutral-700">
+      <p className="text-sm text-muted-foreground">
         If an account exists for that email, a reset link is on its way.
       </p>
     );
@@ -36,27 +40,24 @@ export default function ForgotPasswordPage() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="text-base font-medium">Reset your password</h2>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <input
-        name="email"
-        type="email"
-        required
-        placeholder="Email"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+      <h2 className="font-heading text-base font-medium">
+        Reset your password
+      </h2>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" name="email" type="email" required />
+      </div>
+      <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Sending…" : "Send reset link"}
-      </button>
-      <p className="text-sm text-neutral-600">
-        <Link href="/login" className="underline">
-          Back to sign in
-        </Link>
-      </p>
+      </Button>
+      <Button asChild variant="link" size="xs" className="px-0">
+        <Link href="/login">Back to sign in</Link>
+      </Button>
     </form>
   );
 }

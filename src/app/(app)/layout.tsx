@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/transport/session";
 import { SignOutButton } from "@/components/forms";
+import { Badge } from "@/components/ui/badge";
 
 export default async function AppLayout({
   children,
@@ -9,19 +10,20 @@ export default async function AppLayout({
 }) {
   const session = await requireSession();
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white">
+    <div className="min-h-screen bg-muted/40">
+      <header className="border-b bg-background">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-          <Link href="/dashboard" className="font-semibold text-neutral-900">
+          <Link
+            href="/dashboard"
+            className="font-heading font-semibold text-foreground"
+          >
             invoicer
           </Link>
-          <div className="flex items-center gap-4 text-sm text-neutral-600">
-            <span>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-2">
               {session.user.email}
               {!session.user.emailVerified && (
-                <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                  unverified
-                </span>
+                <Badge variant="outline">unverified</Badge>
               )}
             </span>
             <SignOutButton />

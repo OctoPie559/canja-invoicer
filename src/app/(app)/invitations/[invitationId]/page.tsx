@@ -4,6 +4,15 @@ import { getDb } from "@/lib/db/client";
 import { invitation, organization } from "@/lib/db/schema";
 import { requireSession } from "@/lib/transport/session";
 import { AcceptInvitationButton } from "@/components/forms";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default async function InvitationPage({
   params,
@@ -37,25 +46,32 @@ export default async function InvitationPage({
     inv.email.toLowerCase() === session.user.email.toLowerCase();
 
   return (
-    <div className="mx-auto max-w-md rounded-lg border border-neutral-200 bg-white p-6">
-      <h1 className="mb-2 text-lg font-semibold text-neutral-900">
-        Invitation to {org?.name ?? "an organization"}
-      </h1>
-      <p className="mb-4 text-sm text-neutral-600">
-        {inv.email} · role: {inv.role}
-      </p>
-      {inv.status !== "pending" ? (
-        <p className="text-sm text-neutral-600">
-          This invitation is {inv.status}.
-        </p>
-      ) : emailMatches ? (
-        <AcceptInvitationButton invitationId={inv.id} />
-      ) : (
-        <p className="text-sm text-red-600">
-          This invitation was sent to {inv.email}. You are signed in as{" "}
-          {session.user.email} — sign in with the invited address to accept.
-        </p>
-      )}
-    </div>
+    <Card className="mx-auto max-w-md">
+      <CardHeader>
+        <CardTitle className="font-heading text-lg">
+          Invitation to {org?.name ?? "an organization"}
+        </CardTitle>
+        <CardDescription className="flex items-center gap-2">
+          {inv.email} <Badge variant="outline">{inv.role}</Badge>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {inv.status !== "pending" ? (
+          <p className="text-sm text-muted-foreground">
+            This invitation is {inv.status}.
+          </p>
+        ) : emailMatches ? (
+          <AcceptInvitationButton invitationId={inv.id} />
+        ) : (
+          <Alert variant="destructive">
+            <AlertDescription>
+              This invitation was sent to {inv.email}. You are signed in as{" "}
+              {session.user.email} — sign in with the invited address to
+              accept.
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
