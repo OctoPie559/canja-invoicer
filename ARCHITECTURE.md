@@ -293,7 +293,9 @@ This is a financial tool, so tests are part of every slice's deliverable, not a 
 |---|---|
 | Stack (brief §5.1): Next.js 15 / Neon / Drizzle / Better Auth / Resend / R2 / react-pdf / Paystack-first | **Locked** |
 | Money = bigint minor units in `Money` VO; tax rates as integer bps; FX rates as `numeric(18,8)` | **Locked** |
-| Better Auth tables stay stock; app data in own tables; UUIDv7 everywhere via config | **Locked** (verify Better Auth custom-ID + Drizzle adapter details at slice 0) |
+| Better Auth tables stay stock; app data in own tables; UUIDv7 everywhere via config | **Locked** (verified in slice 0: `advanced.database.generateId`) |
+| Better Auth scope: **authentication only** (users, sessions, verification, reset). Organizations/members/invitations are managed by `lib/services/organizations` — the org plugin's own endpoints would mutate tenancy outside the audit-in-same-transaction pipeline. Tables keep the plugin-compatible shape. | **Locked** (slice 0) |
+| IDs stored as `text` columns (UUIDv7 strings) rather than `uuid` type, for consistency with Better Auth's text ids across all FKs | **Locked** (slice 0) |
 | Display numbers via per-org counters in `organization_settings` under `FOR UPDATE` | **Locked** |
 | Snapshot as JSONB on the document row (vs separate snapshot tables) | Chosen for simplicity; revisit only if snapshot querying becomes a need |
 | Product name | Open — placeholder `invoicer`; does not block |

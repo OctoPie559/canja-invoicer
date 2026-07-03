@@ -1,4 +1,5 @@
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
 import * as schema from "./schema";
 
 /**
@@ -19,15 +20,14 @@ let prodDb: Database | null = null;
  * transport-layer code and adapters — services receive a Database/Transaction
  * as an argument instead.
  */
-export async function getDb(): Promise<Database> {
+export function getDb(): Database {
   if (prodDb) return prodDb;
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
-  const { drizzle } = await import("drizzle-orm/neon-serverless");
   // neon-serverless (WebSocket) rather than neon-http: interactive
   // transactions are required for the audit-in-same-transaction invariant.
-  prodDb = drizzle(url, { schema }) as unknown as Database;
+  prodDb = drizzleNeon(url, { schema }) as unknown as Database;
   return prodDb;
 }
