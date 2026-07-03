@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db/client";
 import { auditLog, invitation, member, user } from "@/lib/db/schema";
@@ -85,6 +86,15 @@ export default async function OrgPage({
           your role <Badge variant="secondary">{role}</Badge>
         </span>
       </div>
+
+      <nav className="flex gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/orgs/${orgId}/customers`}>Customers</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/orgs/${orgId}/products`}>Products & services</Link>
+        </Button>
+      </nav>
 
       <Card>
         <CardHeader>

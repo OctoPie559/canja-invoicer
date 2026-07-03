@@ -108,7 +108,17 @@ export async function updateCustomer(
     if (!current) throw new NotFoundError("customer");
     if (current.version !== data.version) throw new ConflictError("customer");
 
-    const { id: _id, version: _v, ...fields } = data;
+    const fields = {
+      name: data.name,
+      email: data.email ?? null,
+      phone: data.phone ?? null,
+      addressLine1: data.addressLine1 ?? null,
+      addressLine2: data.addressLine2 ?? null,
+      city: data.city ?? null,
+      country: data.country ?? null,
+      notes: data.notes ?? null,
+      preferredCurrency: data.preferredCurrency ?? null,
+    };
     const diff = changedFields(current, fields, EDITABLE_FIELDS);
     if (diff.changed.length === 0) return; // nothing to write, nothing to audit
 
