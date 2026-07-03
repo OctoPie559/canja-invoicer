@@ -244,7 +244,7 @@ Each slice is production quality, deployed, and meets the Definition of Done (br
 
 | # | Slice | Contents | Exit criteria (beyond brief §9) |
 |---|---|---|---|
-| 0 | **Foundation** | Repo, CI, Vercel + Neon environments; full Drizzle schema + migrations incl. RLS policies and `audit_log` REVOKEs; Better Auth (signup, verify, login, reset, sessions) + organizations, members, invitations, roles; `Money`, `writeAudit`, `ActorContext`, permission/entitlement scaffolding; Sentry with MSISDN scrubbing. | Empty-but-real app deployed; a user can sign up, verify, create an org, invite a member; cross-tenant isolation test passes; audit rows written for every auth/org mutation. |
+| 0 | **Foundation** | Repo, CI, Vercel + Neon environments; full Drizzle schema + migrations incl. RLS policies and `audit_log` REVOKEs; Better Auth (signup, verify, login, reset, sessions) + organizations, members, invitations, roles; `Money`, `writeAudit`, `ActorContext`, permission/entitlement scaffolding; Sentry with MSISDN scrubbing. **Status: implemented on `slice-0-foundation`; deploy (Neon + Vercel setup, README §Deployment) pending.** | Empty-but-real app deployed; a user can sign up, verify, create an org, invite a member; cross-tenant isolation test passes; audit rows written for every auth/org mutation. |
 | 1 | **Customers & products** | Full CRUD, version history tables populated, per-customer activity timeline, optimistic locking in anger. | Version history answers point-in-time queries; timelines render from `audit_log`. |
 | 2 | **Invoices** | Draft builder (line items, quantity, discount, tax), totals via `Money`, issue flow (display number under `FOR UPDATE`, snapshot, lock), statuses, void, multi-currency issuance with manual FX entry. | Issued invoice provably uneditable; totals unit-tested incl. FX; sequential numbers race-safe. |
 | 3 | **PDF & send** | `@react-pdf/renderer` template from snapshot, Resend send with deliverability DNS, hosted public view via `public_token`, `email_messages` log. | PDF/public view byte-stable against later customer/branding edits. |
@@ -293,7 +293,9 @@ This is a financial tool, so tests are part of every slice's deliverable, not a 
 |---|---|
 | Stack (brief §5.1): Next.js 15 / Neon / Drizzle / Better Auth / Resend / R2 / react-pdf / Paystack-first | **Locked** |
 | Money = bigint minor units in `Money` VO; tax rates as integer bps; FX rates as `numeric(18,8)` | **Locked** |
-| Better Auth tables stay stock; app data in own tables; UUIDv7 everywhere via config | **Locked** (verify Better Auth custom-ID + Drizzle adapter details at slice 0) |
+| Better Auth tables stay stock; app data in own tables; UUIDv7 everywhere via config | **Locked** (verified in slice 0: `advanced.database.generateId`) |
+| Better Auth scope: **authentication only** (users, sessions, verification, reset). Organizations/members/invitations are managed by `lib/services/organizations` — the org plugin's own endpoints would mutate tenancy outside the audit-in-same-transaction pipeline. Tables keep the plugin-compatible shape. | **Locked** (slice 0) |
+| IDs stored as `text` columns (UUIDv7 strings) rather than `uuid` type, for consistency with Better Auth's text ids across all FKs | **Locked** (slice 0) |
 | Display numbers via per-org counters in `organization_settings` under `FOR UPDATE` | **Locked** |
 | Snapshot as JSONB on the document row (vs separate snapshot tables) | Chosen for simplicity; revisit only if snapshot querying becomes a need |
 | Product name | Open — placeholder `invoicer`; does not block |
