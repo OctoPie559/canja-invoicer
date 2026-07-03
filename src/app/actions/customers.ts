@@ -89,11 +89,15 @@ export async function deleteCustomerAction(
   organizationId: string,
   customerId: string,
   version: number,
-): Promise<void> {
+): Promise<ActionState> {
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
-  await runWithActor(ctx, () =>
-    deleteCustomer(getDb(), ctx, { id: customerId, version }),
-  );
+  try {
+    await runWithActor(ctx, () =>
+      deleteCustomer(getDb(), ctx, { id: customerId, version }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
   redirect(`/orgs/${organizationId}/customers`);
 }

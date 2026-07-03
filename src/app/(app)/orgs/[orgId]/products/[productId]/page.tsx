@@ -11,8 +11,8 @@ import { requireMembership } from "@/lib/transport/org";
 import { deleteProductAction } from "@/app/actions/products";
 import { ProductForm } from "@/components/product-form";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { DeleteButton } from "@/components/delete-button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -49,18 +49,14 @@ export default async function ProductDetailPage({
           </Badge>
         </div>
         {can(role, "product.delete") && (
-          <form
+          <DeleteButton
             action={deleteProductAction.bind(
               null,
               orgId,
               productId,
               product.version,
             )}
-          >
-            <Button variant="destructive" size="sm" type="submit">
-              Delete
-            </Button>
-          </form>
+          />
         )}
       </div>
 

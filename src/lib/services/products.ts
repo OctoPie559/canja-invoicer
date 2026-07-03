@@ -155,11 +155,18 @@ export async function updateProduct(
       currency: price.currency,
       defaultTaxRateId: data.defaultTaxRateId ?? null,
     };
-    if (next.currency !== current.currency) {
-      await assertCurrencyAllowed(tx, ctx.organizationId, next.currency);
-    }
     const diff = changedFields(current, next, EDITABLE_FIELDS);
     if (diff.changed.length === 0) return;
+
+    // any price movement on a non-base currency needs the entitlement —
+    // otherwise a downgraded org could keep repricing foreign-currency
+    // products forever (renames of existing products stay allowed)
+    const priceTouched =
+      diff.changed.includes("unitPriceMinor") ||
+      diff.changed.includes("currency");
+    if (priceTouched) {
+      await assertCurrencyAllowed(tx, ctx.organizationId, next.currency);
+    }
 
     const nextVersion = current.version + 1;
     await tx

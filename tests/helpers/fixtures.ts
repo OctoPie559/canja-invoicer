@@ -50,8 +50,16 @@ export async function upgradeToPro(
   db: Database,
   organizationId: string,
 ): Promise<void> {
+  await setPlan(db, organizationId, "pro");
+}
+
+export async function setPlan(
+  db: Database,
+  organizationId: string,
+  plan: "free" | "pro",
+): Promise<void> {
   await db
     .update(subscriptions)
-    .set({ plan: "pro" })
+    .set({ plan })
     .where(eq(subscriptions.organizationId, organizationId));
 }

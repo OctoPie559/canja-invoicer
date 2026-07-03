@@ -81,11 +81,15 @@ export async function deleteProductAction(
   organizationId: string,
   productId: string,
   version: number,
-): Promise<void> {
+): Promise<ActionState> {
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
-  await runWithActor(ctx, () =>
-    deleteProduct(getDb(), ctx, { id: productId, version }),
-  );
+  try {
+    await runWithActor(ctx, () =>
+      deleteProduct(getDb(), ctx, { id: productId, version }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
   redirect(`/orgs/${organizationId}/products`);
 }

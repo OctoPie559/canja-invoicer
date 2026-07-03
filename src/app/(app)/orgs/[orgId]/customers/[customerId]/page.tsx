@@ -10,8 +10,8 @@ import { requireMembership } from "@/lib/transport/org";
 import { deleteCustomerAction } from "@/app/actions/customers";
 import { CustomerForm } from "@/components/customer-form";
 import { ActivityTimeline } from "@/components/activity-timeline";
+import { DeleteButton } from "@/components/delete-button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -42,18 +42,14 @@ export default async function CustomerDetailPage({
           {customer.name}
         </h1>
         {can(role, "customer.delete") && (
-          <form
+          <DeleteButton
             action={deleteCustomerAction.bind(
               null,
               orgId,
               customerId,
               customer.version,
             )}
-          >
-            <Button variant="destructive" size="sm" type="submit">
-              Delete
-            </Button>
-          </form>
+          />
         )}
       </div>
 

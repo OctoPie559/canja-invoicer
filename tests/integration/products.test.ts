@@ -6,6 +6,8 @@ import {
   ConflictError,
   EntitlementError,
   MoneyError,
+  NotFoundError,
+  PermissionError,
 } from "@/lib/domain/errors";
 import type { ActorContext } from "@/lib/audit/context";
 import {
@@ -20,6 +22,7 @@ import {
 import { createTestDb } from "../helpers/db";
 import {
   createTwoOrgFixture,
+  setPlan,
   upgradeToPro,
   type TwoOrgFixture,
 } from "../helpers/fixtures";
@@ -157,6 +160,83 @@ describe("products service", () => {
     ).rejects.toThrow(ConflictError);
     const row = await getProduct(db, fx.orgA, productId);
     expect(row?.unitPriceMinor).toBe(1600000n);
+  });
+
+  it("cross-tenant access fails: foreign actor, foreign id, foreign history", async () => {
+    // alice acting in org B — not a member there
+    await expect(
+      createProduct(
+        db,
+        { actorType: "user", actorId: fx.alice.id, organizationId: fx.orgB },
+        base,
+      ),
+    ).rejects.toThrow(PermissionError);
+
+    // bob's product is unreachable through org A's context
+    const { productId: bobsProduct } = await createProduct(db, actorInB(), {
+      name: "Org B Retainer",
+      unitPrice: "5000.00",
+      currency: "KES",
+    });
+    await expect(
+      updateProduct(db, actorInA(), {
+        ...base,
+        id: bobsProduct,
+        version: 1,
+        unitPrice: "1.00",
+      }),
+    ).rejects.toThrow(NotFoundError);
+    await expect(
+      deleteProduct(db, actorInA(), { id: bobsProduct, version: 1 }),
+    ).rejects.toThrow(NotFoundError);
+
+    // reads: foreign id yields nothing, price history leaks zero rows
+    expect(await getProduct(db, fx.orgA, bobsProduct)).toBeNull();
+    const listedInA = await listProducts(db, fx.orgA);
+    expect(listedInA.map((p) => p.id)).not.toContain(bobsProduct);
+    expect(await getProductVersions(db, fx.orgA, bobsProduct)).toEqual([]);
+    expect(await getProductTimeline(db, fx.orgA, bobsProduct)).toEqual([]);
+
+    // and bob's product is untouched
+    const intact = await getProduct(db, fx.orgB, bobsProduct);
+    expect(intact?.unitPriceMinor).toBe(500000n);
+  });
+
+  it("repricing a foreign-currency product stays Pro-gated after a downgrade", async () => {
+    // org A (Pro) prices in USD, then downgrades to Free
+    const { productId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "USD Retainer",
+      currency: "USD",
+      unitPrice: "500.00",
+    });
+    await setPlan(db, fx.orgA, "free");
+    try {
+      // price movement without a currency change is still gated
+      await expect(
+        updateProduct(db, actorInA(), {
+          ...base,
+          id: productId,
+          version: 1,
+          name: "USD Retainer",
+          currency: "USD",
+          unitPrice: "650.00",
+        }),
+      ).rejects.toThrow(EntitlementError);
+      // a rename that leaves the price alone remains allowed
+      await expect(
+        updateProduct(db, actorInA(), {
+          ...base,
+          id: productId,
+          version: 1,
+          name: "USD Retainer (legacy)",
+          currency: "USD",
+          unitPrice: "500.00",
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await upgradeToPro(db, fx.orgA);
+    }
   });
 
   it("soft-deletes products, keeping history and audit", async () => {
