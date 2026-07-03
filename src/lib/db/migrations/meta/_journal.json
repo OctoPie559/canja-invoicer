@@ -15,6 +15,20 @@
       "when": 1783058005052,
       "tag": "0001_rls_and_audit_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783070134978,
+      "tag": "0002_member_unique_rate_limit_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783070135585,
+      "tag": "0003_future_table_grants",
+      "breakpoints": true
     }
   ]
 }

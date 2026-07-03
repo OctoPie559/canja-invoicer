@@ -23,4 +23,12 @@ describe("Sentry payload scrubbing", () => {
     expect(scrubStrings(["+254712345678"])[0]).not.toContain("712345678");
     expect(scrubStrings(42)).toBe(42);
   });
+
+  it("masks email local parts, keeping the domain for debuggability", () => {
+    const scrubbed = scrubStrings({
+      message: "delivery failed for wanjiku.kamau@gmail.com",
+    });
+    expect(scrubbed.message).not.toContain("wanjiku.kamau");
+    expect(scrubbed.message).toContain("w***@gmail.com");
+  });
 });

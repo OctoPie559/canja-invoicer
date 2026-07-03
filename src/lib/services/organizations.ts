@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
@@ -29,7 +29,8 @@ import {
   type CreateOrganizationInput,
   type InviteMemberInput,
 } from "@/lib/validation/organizations";
-import { getEmailSender } from "@/lib/email/port";
+import { getEmailSender, type EmailSender } from "@/lib/email/port";
+import { appBaseUrl } from "@/lib/config";
 
 /**
  * Organization lifecycle lives HERE, not in Better Auth (ARCHITECTURE.md
@@ -139,14 +140,23 @@ export async function createOrganization(
   return { organizationId };
 }
 
+/** Side-effect ports, injectable for tests; defaults resolve the real ones. */
+export interface InviteDeps {
+  emailSender?: EmailSender;
+  baseUrl?: string;
+}
+
 export async function inviteMember(
   db: Database,
   ctx: ActorContext,
   input: InviteMemberInput,
+  deps: InviteDeps = {},
 ): Promise<{ invitationId: string }> {
   const data = inviteMemberSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("member.invite");
 
+  const emailSender = deps.emailSender ?? getEmailSender();
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
   const invitationId = newId();
   const invitedEmail = data.email;
 
@@ -154,8 +164,8 @@ export async function inviteMember(
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "member.invite");
 
-    // seat cap counts active members plus seats already promised to
-    // pending invitations, so Free cannot over-invite
+    // seat cap counts active members plus seats already promised to live
+    // (unexpired) pending invitations, so Free cannot over-invite
     const plan = await getPlan(tx, ctx.organizationId);
     const members = await tx
       .select({ id: member.id })
@@ -168,9 +178,34 @@ export async function inviteMember(
         and(
           eq(invitation.organizationId, ctx.organizationId),
           eq(invitation.status, "pending"),
+          gt(invitation.expiresAt, new Date()),
         ),
       );
     requireWithinCap(plan, "seatCap", members.length + pending.length);
+
+    // inviting someone who already holds a seat is always a mistake
+    const [existingUser] = await tx
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, invitedEmail))
+      .limit(1);
+    if (existingUser) {
+      const [existingMember] = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, ctx.organizationId),
+            eq(member.userId, existingUser.id),
+          ),
+        )
+        .limit(1);
+      if (existingMember) {
+        throw new ValidationError(
+          "This person is already a member of the organization",
+        );
+      }
+    }
 
     const [duplicate] = await tx
       .select({ id: invitation.id })
@@ -222,8 +257,7 @@ export async function inviteMember(
   });
 
   // side effect after commit — an email must never fire for a rolled-back invite
-  const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
-  const result = await getEmailSender()
+  const result = await emailSender
     .send({
       to: invitedEmail,
       subject: `You've been invited to ${orgName} on invoicer`,
@@ -236,7 +270,12 @@ export async function inviteMember(
       status: result.providerMessageId ? "sent" : "send_failed",
       providerMessageId: result.providerMessageId,
     })
-    .where(eq(emailMessages.entityId, invitationId));
+    .where(
+      and(
+        eq(emailMessages.organizationId, ctx.organizationId),
+        eq(emailMessages.entityId, invitationId),
+      ),
+    );
 
   return { invitationId };
 }
@@ -279,9 +318,15 @@ export async function revokeInvitation(
   });
 }
 
+/** Internal marker: invitation found expired inside the accept transaction. */
+class InvitationExpired extends Error {}
+
 /**
  * Accept runs as the invited user, who is not yet a member — so the caller
- * is identified by their verified account email, not by role.
+ * is identified by their verified account email, not by role. The invitation
+ * is re-read FOR UPDATE inside the transaction: concurrent accepts serialize
+ * on the row lock, and the member table's (org, user) unique index is the
+ * final guarantee against duplicate memberships.
  */
 export async function acceptInvitation(
   db: Database,
@@ -291,67 +336,110 @@ export async function acceptInvitation(
   const data = acceptInvitationSchema.parse(input);
 
   // resolve the invitation's org first (owner-level read; single row by id)
-  const [inv] = await db
-    .select({
-      id: invitation.id,
-      organizationId: invitation.organizationId,
-      email: invitation.email,
-      role: invitation.role,
-      status: invitation.status,
-      expiresAt: invitation.expiresAt,
-    })
+  const [invRef] = await db
+    .select({ organizationId: invitation.organizationId })
     .from(invitation)
     .where(eq(invitation.id, data.invitationId))
     .limit(1);
-  if (!inv) throw new NotFoundError("invitation");
+  if (!invRef) throw new NotFoundError("invitation");
+  const organizationId = invRef.organizationId;
 
   const ctx: ActorContext = {
     actorType: "user",
     actorId: actor.userId,
-    organizationId: inv.organizationId,
+    organizationId,
     ...actor.meta,
   };
 
-  await withOrgTransaction(db, inv.organizationId, async (tx) => {
-    const [u] = await tx
-      .select({ email: user.email })
-      .from(user)
-      .where(eq(user.id, actor.userId))
-      .limit(1);
-    if (!u || u.email.toLowerCase() !== inv.email.toLowerCase()) {
-      throw new PermissionError("invitation.accept");
-    }
-    if (inv.status !== "pending") {
-      throw new ValidationError("Invitation is no longer pending");
-    }
-    if (inv.expiresAt.getTime() < Date.now()) {
+  try {
+    await withOrgTransaction(db, organizationId, async (tx) => {
+      // fresh, locked read — never trust the pre-transaction snapshot
+      const [inv] = await tx
+        .select()
+        .from(invitation)
+        .where(eq(invitation.id, data.invitationId))
+        .for("update");
+      if (!inv) throw new NotFoundError("invitation");
+
+      const [u] = await tx
+        .select({ email: user.email })
+        .from(user)
+        .where(eq(user.id, actor.userId))
+        .limit(1);
+      if (!u || u.email.toLowerCase() !== inv.email.toLowerCase()) {
+        throw new PermissionError("invitation.accept");
+      }
+      if (inv.status !== "pending") {
+        throw new ValidationError("Invitation is no longer pending");
+      }
+      if (inv.expiresAt.getTime() < Date.now()) {
+        throw new InvitationExpired();
+      }
+
+      const [existing] = await tx
+        .select({ id: member.id })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, organizationId),
+            eq(member.userId, actor.userId),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        throw new ValidationError(
+          "You are already a member of this organization",
+        );
+      }
+
+      const role = inv.role && isRole(inv.role) ? inv.role : "member";
+      await tx.insert(member).values({
+        id: newId(),
+        organizationId,
+        userId: actor.userId,
+        role,
+      });
       await tx
         .update(invitation)
-        .set({ status: "expired" })
+        .set({ status: "accepted" })
         .where(eq(invitation.id, inv.id));
+      await writeAudit(tx, ctx, {
+        action: "member.joined",
+        entityType: "member",
+        entityId: actor.userId,
+        changes: { after: { role, via: "invitation" } },
+      });
+    });
+  } catch (error) {
+    if (error instanceof InvitationExpired) {
+      // persist the expiry in its own committed transaction — the failed
+      // accept must not roll this back
+      await withOrgTransaction(db, organizationId, async (tx) => {
+        await tx
+          .update(invitation)
+          .set({ status: "expired" })
+          .where(
+            and(
+              eq(invitation.id, data.invitationId),
+              eq(invitation.status, "pending"),
+            ),
+          );
+        await writeAudit(tx, ctx, {
+          action: "invitation.expired",
+          entityType: "invitation",
+          entityId: data.invitationId,
+          changes: {
+            before: { status: "pending" },
+            after: { status: "expired" },
+          },
+        });
+      });
       throw new ValidationError("Invitation has expired");
     }
+    throw error;
+  }
 
-    const role = inv.role && isRole(inv.role) ? inv.role : "member";
-    await tx.insert(member).values({
-      id: newId(),
-      organizationId: inv.organizationId,
-      userId: actor.userId,
-      role,
-    });
-    await tx
-      .update(invitation)
-      .set({ status: "accepted" })
-      .where(eq(invitation.id, inv.id));
-    await writeAudit(tx, ctx, {
-      action: "member.joined",
-      entityType: "member",
-      entityId: actor.userId,
-      changes: { after: { role, via: "invitation" } },
-    });
-  });
-
-  return { organizationId: inv.organizationId };
+  return { organizationId };
 }
 
 /** Orgs the user belongs to (cross-org read for the dashboard shell). */

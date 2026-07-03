@@ -83,6 +83,7 @@ export const paymentEvents = pgTable(
       .notNull()
       .defaultNow(),
     ...timestamps,
+    ...softDelete,
   },
   (t) => [
     uniqueIndex("payment_events_provider_event_idx").on(

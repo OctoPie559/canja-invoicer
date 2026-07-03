@@ -2,7 +2,13 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
 import { getDb } from "@/lib/db/client";
-import { account, session, user, verification } from "@/lib/db/schema";
+import {
+  account,
+  rateLimit,
+  session,
+  user,
+  verification,
+} from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
 import { getEmailSender } from "@/lib/email/port";
 
@@ -18,7 +24,7 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(getDb(), {
     provider: "pg",
-    schema: { user, session, account, verification },
+    schema: { user, session, account, verification, rateLimit },
   }),
   advanced: {
     database: {
@@ -53,8 +59,12 @@ export const auth = betterAuth({
     },
   },
   rateLimit: {
-    // brief §6: rate limiting on login and password reset
+    // brief §6: rate limiting on login and password reset. Storage must be
+    // the database — in-memory counters are per-instance on serverless and
+    // would silently not throttle in production.
     enabled: true,
+    storage: "database",
+    modelName: "rateLimit",
     window: 60,
     max: 10,
   },

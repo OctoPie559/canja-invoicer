@@ -1,6 +1,6 @@
 import { index, pgTable, text } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
-import { timestamps } from "./helpers";
+import { softDelete, timestamps } from "./helpers";
 
 /**
  * Outbound email log (§3.7). Deliverability is business-critical; every send
@@ -22,6 +22,7 @@ export const emailMessages = pgTable(
     status: text("status").notNull().default("queued"),
     error: text("error"),
     ...timestamps,
+    ...softDelete,
   },
   (t) => [index("email_messages_org_idx").on(t.organizationId)],
 );

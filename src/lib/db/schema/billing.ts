@@ -1,6 +1,6 @@
 import { pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organization } from "./auth";
-import { optimisticLock, timestamps } from "./helpers";
+import { optimisticLock, softDelete, timestamps } from "./helpers";
 
 /**
  * Self-monetization (§3.8). Plan entitlement definitions live in code
@@ -25,5 +25,6 @@ export const subscriptions = pgTable("subscriptions", {
   providerCustomerId: text("provider_customer_id"),
   providerSubscriptionId: text("provider_subscription_id"),
   ...timestamps,
+  ...softDelete,
   ...optimisticLock,
 });

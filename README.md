@@ -45,8 +45,9 @@ npm run lint
 3. **Resend** (before slice 3): add a dedicated sending subdomain
    (e.g. `send.yourdomain.co.ke`), configure SPF/DKIM/DMARC, then set
    `RESEND_API_KEY` and `EMAIL_FROM`.
-4. **Sentry**: create a Next.js project; set `SENTRY_DSN`,
-   `NEXT_PUBLIC_SENTRY_DSN`, and (for source maps) `SENTRY_ORG`,
+4. **Sentry**: already wired to the project DSN (baked into the configs;
+   override per environment via `SENTRY_DSN` /
+   `NEXT_PUBLIC_SENTRY_DSN`). For source maps set `SENTRY_ORG`,
    `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`.
 
 ## Working conventions

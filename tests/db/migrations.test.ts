@@ -46,28 +46,42 @@ describe("migrations", () => {
       "audit_log",
       "email_messages",
       "subscriptions",
+      "rate_limit",
     ]) {
       expect(tables, `missing table ${expected}`).toContain(expected);
     }
   });
 
-  it("enables RLS with an org-isolation policy on every org-scoped table", async () => {
-    const result = rows(await db.execute(
-      sql`SELECT c.relname AS table_name, c.relrowsecurity AS rls
+  it("enables RLS with an org-isolation policy on EVERY table that carries organization_id", async () => {
+    // derived from the live schema, not a hardcoded list: adding a new
+    // org-scoped table without an RLS policy must fail this test loudly
+    const orgTables = rows(await db.execute(
+      sql`SELECT c.table_name FROM information_schema.columns c
+          JOIN information_schema.tables t
+            ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+          WHERE c.table_schema = 'public'
+            AND c.column_name = 'organization_id'
+            AND t.table_type = 'BASE TABLE'`,
+    )).map((r) => r.table_name as string).sort();
+    expect(orgTables.length).toBeGreaterThanOrEqual(24);
+
+    const rls = rows(await db.execute(
+      sql`SELECT c.relname AS table_name, c.relrowsecurity AS enabled
           FROM pg_class c
           JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname = 'public' AND c.relkind = 'r'`,
     ));
     const rlsByTable = new Map(
-      result.map((r) => [r.table_name as string, r.rls as boolean]),
+      rls.map((r) => [r.table_name as string, r.enabled as boolean]),
     );
-    for (const t of ["customers", "invoices", "payments", "audit_log", "member"]) {
+    const policyTables = rows(await db.execute(
+      sql`SELECT tablename FROM pg_policies WHERE policyname = 'org_isolation'`,
+    )).map((r) => r.tablename as string).sort();
+
+    for (const t of orgTables) {
       expect(rlsByTable.get(t), `RLS not enabled on ${t}`).toBe(true);
     }
-    const policies = rows(await db.execute(
-      sql`SELECT tablename FROM pg_policies WHERE policyname = 'org_isolation'`,
-    ));
-    expect(policies.length).toBe(24);
+    expect(policyTables).toEqual(orgTables);
   });
 
   it("revokes UPDATE and DELETE on audit_log from the app role", async () => {
