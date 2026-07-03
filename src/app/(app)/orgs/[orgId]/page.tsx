@@ -7,6 +7,22 @@ import { can, isRole } from "@/lib/authz/permissions";
 import { requireSession } from "@/lib/transport/session";
 import { InviteMemberForm } from "@/components/forms";
 import { revokeInvitationAction } from "@/app/actions/organizations";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 /**
  * Reads may bypass services but never tenancy (ARCHITECTURE.md §1.1): the
@@ -62,76 +78,102 @@ export default async function OrgPage({
   return (
     <div className="space-y-8">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-neutral-900">{org.name}</h1>
-        <span className="text-sm text-neutral-500">your role: {role}</span>
+        <h1 className="font-heading text-xl font-semibold text-foreground">
+          {org.name}
+        </h1>
+        <span className="flex items-center gap-2 text-sm text-muted-foreground">
+          your role <Badge variant="secondary">{role}</Badge>
+        </span>
       </div>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-medium text-neutral-900">Members</h2>
-        <ul className="divide-y divide-neutral-100 text-sm">
-          {members.map((m) => (
-            <li key={m.id} className="flex justify-between py-2">
-              <span>
-                {m.name} <span className="text-neutral-500">({m.email})</span>
-              </span>
-              <span className="text-neutral-500">{m.role}</span>
-            </li>
-          ))}
-        </ul>
-        {pendingInvitations.length > 0 && (
-          <>
-            <h3 className="mt-4 mb-2 text-sm font-medium text-neutral-700">
-              Pending invitations
-            </h3>
-            <ul className="divide-y divide-neutral-100 text-sm">
-              {pendingInvitations.map((inv) => (
-                <li key={inv.id} className="flex items-center justify-between py-2">
-                  <span>
-                    {inv.email}{" "}
-                    <span className="text-neutral-500">({inv.role})</span>
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-base">Members</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead className="text-right">Role</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {members.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell className="font-medium">{m.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {m.email}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant="secondary">{m.role}</Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {pendingInvitations.length > 0 && (
+            <>
+              <h3 className="mt-6 mb-2 text-sm font-medium text-foreground">
+                Pending invitations
+              </h3>
+              <ul className="divide-y text-sm">
+                {pendingInvitations.map((inv) => (
+                  <li
+                    key={inv.id}
+                    className="flex items-center justify-between py-2"
+                  >
+                    <span className="flex items-center gap-2">
+                      {inv.email}
+                      <Badge variant="outline">{inv.role}</Badge>
+                    </span>
+                    {can(role, "member.invite") && (
+                      <form
+                        action={revokeInvitationAction.bind(null, orgId, inv.id)}
+                      >
+                        <Button variant="destructive" size="xs" type="submit">
+                          Revoke
+                        </Button>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {can(role, "member.invite") && (
+            <div className="mt-6 border-t pt-4">
+              <InviteMemberForm organizationId={orgId} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-base">Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {timeline.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity yet.</p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {timeline.map((entry) => (
+                <li key={entry.id} className="flex justify-between py-2">
+                  <span className="font-mono text-foreground">
+                    {entry.action}
                   </span>
-                  {can(role, "member.invite") && (
-                    <form
-                      action={revokeInvitationAction.bind(null, orgId, inv.id)}
-                    >
-                      <button className="text-xs text-red-600 underline">
-                        Revoke
-                      </button>
-                    </form>
-                  )}
+                  <span className="text-muted-foreground">
+                    {entry.actorType} ·{" "}
+                    {entry.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                  </span>
                 </li>
               ))}
             </ul>
-          </>
-        )}
-        {can(role, "member.invite") && (
-          <div className="mt-4 border-t border-neutral-100 pt-4">
-            <InviteMemberForm organizationId={orgId} />
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-neutral-200 bg-white p-4">
-        <h2 className="mb-3 text-base font-medium text-neutral-900">
-          Activity
-        </h2>
-        {timeline.length === 0 ? (
-          <p className="text-sm text-neutral-600">No activity yet.</p>
-        ) : (
-          <ul className="divide-y divide-neutral-100 text-sm">
-            {timeline.map((entry) => (
-              <li key={entry.id} className="flex justify-between py-2">
-                <span className="font-mono text-neutral-800">
-                  {entry.action}
-                </span>
-                <span className="text-neutral-500">
-                  {entry.actorType} · {entry.createdAt.toISOString().slice(0, 16).replace("T", " ")}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

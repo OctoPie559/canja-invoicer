@@ -3,6 +3,10 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -34,26 +38,30 @@ function ResetPasswordForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="text-base font-medium">Choose a new password</h2>
-      <p className="text-sm text-neutral-600">
+      <h2 className="font-heading text-base font-medium">
+        Choose a new password
+      </h2>
+      <p className="text-sm text-muted-foreground">
         For your security, all sessions are signed out after the reset.
       </p>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <input
-        name="password"
-        type="password"
-        required
-        minLength={8}
-        placeholder="New password (min 8 characters)"
-        className="w-full rounded border border-neutral-300 px-3 py-2 text-sm"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="w-full rounded bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      <div className="space-y-2">
+        <Label htmlFor="password">New password (min 8 characters)</Label>
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          required
+          minLength={8}
+        />
+      </div>
+      <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Saving…" : "Set new password"}
-      </button>
+      </Button>
     </form>
   );
 }
