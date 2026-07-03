@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   Package,
+  Settings,
   Users,
 } from "lucide-react";
 import { Logo } from "./logo";
@@ -54,33 +56,53 @@ export function AppSidebar({
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => {
-                const active = item.exact
-                  ? pathname === item.href
-                  : pathname.startsWith(item.href);
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={active}>
-                      <Link
-                        href={item.href}
-                        className={
-                          active ? "font-medium text-primary" : undefined
-                        }
-                      >
-                        <item.icon
-                          className={active ? "text-primary" : undefined}
-                        />
-                        {item.title}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {items.map((item) => (
+                <NavItem key={item.href} item={item} pathname={pathname} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup className="mt-auto">
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <NavItem
+                item={{
+                  title: "Settings",
+                  href: `${orgRoot}/settings`,
+                  icon: Settings,
+                }}
+                pathname={pathname}
+              />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+function NavItem({
+  item,
+  pathname,
+}: {
+  item: { title: string; href: string; icon: LucideIcon; exact?: boolean };
+  pathname: string;
+}) {
+  const active = item.exact
+    ? pathname === item.href
+    : pathname.startsWith(item.href);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active}>
+        <Link
+          href={item.href}
+          className={active ? "font-medium text-primary" : undefined}
+        >
+          <item.icon className={active ? "text-primary" : undefined} />
+          {item.title}
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }

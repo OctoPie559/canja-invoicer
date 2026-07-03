@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, Settings } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -30,10 +31,13 @@ export function UserMenu({
   name,
   email,
   emailVerified,
+  settingsHref,
 }: {
   name: string;
   email: string;
   emailVerified: boolean;
+  /** Org settings link when rendered inside an organization. */
+  settingsHref?: string;
 }) {
   const router = useRouter();
   return (
@@ -60,6 +64,14 @@ export function UserMenu({
           {!emailVerified && <Badge variant="outline">unverified</Badge>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {settingsHref && (
+          <DropdownMenuItem asChild>
+            <Link href={settingsHref}>
+              <Settings />
+              Organization settings
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={async () => {
             await authClient.signOut();

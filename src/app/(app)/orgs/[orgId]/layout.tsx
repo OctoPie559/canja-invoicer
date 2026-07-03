@@ -42,6 +42,7 @@ export default async function OrgShellLayout({
               name={session.user.name}
               email={session.user.email}
               emailVerified={session.user.emailVerified}
+              settingsHref={`/orgs/${orgId}/settings`}
             />
           </div>
         </header>

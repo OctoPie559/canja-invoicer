@@ -6,18 +6,18 @@ export function Logo({ href = "/dashboard" }: { href?: string }) {
   return (
     <Link href={href} className="inline-flex shrink-0 items-center">
       <Image
-        src="/logo_assets/wordmark-color.png"
+        src="/logo_assets/color-logo.png"
         alt="invoicer"
-        width={120}
-        height={32}
-        className="h-7 w-auto dark:hidden"
+        width={512}
+        height={512}
+        className="w-32 h-32 dark:hidden"
         priority
       />
       <Image
-        src="/logo_assets/wordmark-white.png"
+        src="/logo_assets/logo-grayscale.png"
         alt="invoicer"
-        width={120}
-        height={32}
+        width={512}
+        height={512}
         className="hidden h-7 w-auto dark:block"
         priority
       />

@@ -35,7 +35,7 @@ export function OrgSwitcher({
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger asChild className="px-0">
             <SidebarMenuButton
               size="lg"
               className="data-[state=open]:bg-sidebar-accent"
