@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
@@ -184,10 +184,11 @@ export async function inviteMember(
     requireWithinCap(plan, "seatCap", members.length + pending.length);
 
     // inviting someone who already holds a seat is always a mistake
+    // (invitedEmail is lowercased by Zod; stored emails may not be)
     const [existingUser] = await tx
       .select({ id: user.id })
       .from(user)
-      .where(eq(user.email, invitedEmail))
+      .where(sql`lower(${user.email}) = ${invitedEmail}`)
       .limit(1);
     if (existingUser) {
       const [existingMember] = await tx
@@ -207,6 +208,8 @@ export async function inviteMember(
       }
     }
 
+    // only a LIVE pending invitation blocks a re-invite; time-expired ones
+    // (even if never flipped to 'expired') do not
     const [duplicate] = await tx
       .select({ id: invitation.id })
       .from(invitation)
@@ -215,6 +218,7 @@ export async function inviteMember(
           eq(invitation.organizationId, ctx.organizationId),
           eq(invitation.email, invitedEmail),
           eq(invitation.status, "pending"),
+          gt(invitation.expiresAt, new Date()),
         ),
       )
       .limit(1);
