@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Tests (unit + integration on PGlite)
+        run: npm test
+      - name: Build
+        run: npm run build
+        env:
+          # build-time placeholders; real values live in Vercel
+          DATABASE_URL: postgresql://user:pass@localhost:5432/build
+          BETTER_AUTH_SECRET: ci-build-placeholder
