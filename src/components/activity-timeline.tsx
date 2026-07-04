@@ -4,6 +4,8 @@ export interface TimelineEntry {
   id: string;
   action: string;
   actorType: string;
+  /** Resolved user name when the actor is a person. */
+  actorName?: string | null;
   createdAt: Date;
 }
 
@@ -18,7 +20,9 @@ export function ActivityTimeline({ entries }: { entries: TimelineEntry[] }) {
         <li key={entry.id} className="flex items-center justify-between py-2">
           <span className="font-mono text-foreground">{entry.action}</span>
           <span className="flex items-center gap-2 text-muted-foreground">
-            <Badge variant="outline">{entry.actorType}</Badge>
+            <Badge variant="outline">
+              {entry.actorName ?? entry.actorType}
+            </Badge>
             {entry.createdAt.toISOString().slice(0, 16).replace("T", " ")}
           </span>
         </li>

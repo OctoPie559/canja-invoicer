@@ -3,12 +3,17 @@ import { can } from "@/lib/authz/permissions";
 import { listCustomers } from "@/lib/services/customers";
 import { requireMembership } from "@/lib/transport/org";
 import { CustomerListPane } from "@/components/customer-list-pane";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 
-/** Index of the master-detail view: prompt on desktop, list on mobile. */
-export default async function CustomersIndexPage({
+/**
+ * Master-detail: the customer list stays on the left while the right pane
+ * shows whatever is selected (detail tabs, new/edit forms, or the prompt).
+ */
+export default async function CustomersLayout({
+  children,
   params,
 }: {
+  children: React.ReactNode;
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
@@ -16,9 +21,8 @@ export default async function CustomersIndexPage({
   const customers = await listCustomers(getDb(), orgId);
 
   return (
-    <>
-      {/* the layout's list pane is hidden below lg; show it here instead */}
-      <Card className="overflow-hidden py-0 lg:hidden">
+    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <Card className="hidden h-[calc(100vh-8.5rem)] overflow-hidden py-0 lg:block">
         <CustomerListPane
           organizationId={orgId}
           customers={customers.map((c) => ({
@@ -29,13 +33,7 @@ export default async function CustomersIndexPage({
           canCreate={can(role, "customer.create")}
         />
       </Card>
-      <Card className="hidden lg:block">
-        <CardContent className="py-16 text-center text-sm text-muted-foreground">
-          {customers.length === 0
-            ? "No customers yet — create your first one with the + button."
-            : "Select a customer to see their full workspace."}
-        </CardContent>
-      </Card>
-    </>
+      <div className="min-w-0">{children}</div>
+    </div>
   );
 }
