@@ -45,8 +45,12 @@ export function AppSidebar({
 
   return (
     <Sidebar>
-      <SidebarHeader className="gap-4 px-4 pt-4">
+      {/* h-14 + border-b matches the content header, so the hairline runs
+          as one continuous line across the app (per the design reference) */}
+      <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4">
         <Logo />
+      </div>
+      <SidebarHeader className="px-4 pt-3">
         <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
       </SidebarHeader>
       <SidebarContent>

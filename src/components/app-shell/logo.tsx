@@ -8,9 +8,9 @@ export function Logo({ href = "/dashboard" }: { href?: string }) {
       <Image
         src="/logo_assets/color-logo.png"
         alt="invoicer"
-        width={512}
-        height={512}
-        className="w-32 h-32 dark:hidden"
+        width={256}
+        height={256}
+        className="w-32 h-10 dark:hidden"
         priority
       />
       <Image
