@@ -320,9 +320,8 @@ export async function getCustomerReceivables(
     );
   const byCurrency = new Map<string, Money>();
   for (const row of rows) {
-    const remaining = Money.fromMinor(
-      row.totalMinor - row.amountPaidMinor,
-      row.currency,
+    const remaining = Money.fromMinor(row.totalMinor, row.currency).subtract(
+      Money.fromMinor(row.amountPaidMinor, row.currency),
     );
     const prev = byCurrency.get(row.currency) ?? Money.zero(row.currency);
     byCurrency.set(row.currency, prev.add(remaining));
@@ -374,6 +373,10 @@ export async function getCustomerTransactions(
       and(
         eq(payments.organizationId, organizationId),
         eq(invoices.customerId, customerId),
+        // a payment on a voided/removed invoice must not appear either —
+        // keep both sides of the ledger on the same filter
+        notInArray(invoices.status, ["draft", "void"]),
+        isNull(invoices.deletedAt),
         isNull(payments.deletedAt),
       ),
     )
@@ -441,6 +444,10 @@ export async function getCustomerStatement(
       and(
         eq(payments.organizationId, organizationId),
         eq(invoices.customerId, customerId),
+        // same exclusion as the invoice side: a void/removed invoice takes
+        // its payments off the statement with it
+        notInArray(invoices.status, ["draft", "void"]),
+        isNull(invoices.deletedAt),
         isNull(payments.deletedAt),
       ),
     );

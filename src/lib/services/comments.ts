@@ -4,11 +4,7 @@ import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import { comments, customers, user } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
-import {
-  NotFoundError,
-  PermissionError,
-  ValidationError,
-} from "@/lib/domain/errors";
+import { NotFoundError, PermissionError } from "@/lib/domain/errors";
 import { writeAudit } from "@/lib/audit/write";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize, can } from "@/lib/authz/permissions";
@@ -112,7 +108,7 @@ export async function deleteComment(
 
     // authors may always remove their own note; others need the permission
     if (existing.authorId !== ctx.actorId && !can(caller.role, "comment.delete")) {
-      throw new ValidationError("Only the author or an admin can delete this comment");
+      throw new PermissionError("comment.delete");
     }
 
     await tx

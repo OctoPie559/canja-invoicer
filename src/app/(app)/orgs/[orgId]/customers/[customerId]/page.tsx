@@ -45,6 +45,16 @@ function money(amountMinor: bigint, currency: string): string {
   return Money.fromMinor(amountMinor, currency).toString();
 }
 
+function balanceDue(
+  totalMinor: bigint,
+  amountPaidMinor: bigint,
+  currency: string,
+): string {
+  return Money.fromMinor(totalMinor, currency)
+    .subtract(Money.fromMinor(amountPaidMinor, currency))
+    .toString();
+}
+
 function statementPeriod(preset: string): { from: Date; to: Date; label: string } {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -264,7 +274,7 @@ export default async function CustomerWorkspacePage({
                           {money(inv.totalMinor, inv.currency)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {money(inv.totalMinor - inv.amountPaidMinor, inv.currency)}
+                          {balanceDue(inv.totalMinor, inv.amountPaidMinor, inv.currency)}
                         </TableCell>
                       </TableRow>
                     ))}

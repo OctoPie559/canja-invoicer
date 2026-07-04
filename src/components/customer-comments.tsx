@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { ActionState } from "@/app/actions/organizations";
 import {
@@ -38,6 +38,7 @@ export function CustomerComments({
   canDeleteAny: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
     async (prev: ActionState, formData: FormData) => {
       const result = await addCustomerCommentAction(
@@ -72,6 +73,11 @@ export function CustomerComments({
           </Button>
         </form>
       )}
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
       {comments.length === 0 ? (
         <p className="text-sm text-muted-foreground">No comments yet.</p>
       ) : (
@@ -94,13 +100,14 @@ export function CustomerComments({
                       type="button"
                       aria-label="Delete comment"
                       className="text-muted-foreground hover:text-destructive"
-                      onClick={() =>
-                        deleteCustomerCommentAction(
+                      onClick={async () => {
+                        const result = await deleteCustomerCommentAction(
                           organizationId,
                           customerId,
                           comment.id,
-                        )
-                      }
+                        );
+                        setDeleteError(result.error);
+                      }}
                     >
                       <Trash2 className="size-3.5" />
                     </button>

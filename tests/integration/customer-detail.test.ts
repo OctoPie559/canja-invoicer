@@ -3,11 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "@/lib/db/client";
 import { auditLog, invoices, payments } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
-import {
-  NotFoundError,
-  PermissionError,
-  ValidationError,
-} from "@/lib/domain/errors";
+import { NotFoundError, PermissionError } from "@/lib/domain/errors";
 import type { ActorContext } from "@/lib/audit/context";
 import {
   addComment,
@@ -19,6 +15,7 @@ import {
   getCustomerReceivables,
   getCustomerStatement,
   getCustomerTimeline,
+  getCustomerTransactions,
 } from "@/lib/services/customers";
 import {
   acceptInvitation,
@@ -77,7 +74,7 @@ describe("customer workspace (comments, receivables, statement)", () => {
     expect(audited.map((a) => a.action)).toContain("comment.added");
   });
 
-  it("author can delete their own comment; another member cannot", async () => {
+  it("author can delete their own comment; another member cannot; admins can delete any", async () => {
     const { commentId } = await addComment(db, actorInA(), {
       entityType: "customer",
       entityId: customerId,
@@ -90,17 +87,28 @@ describe("customer workspace (comments, receivables, statement)", () => {
       role: "member",
     });
     await acceptInvitation(db, { userId: dave.id }, { invitationId });
-    await expect(
-      deleteComment(
-        db,
-        { actorType: "user", actorId: dave.id, organizationId: fx.orgA },
-        commentId,
-      ),
-    ).rejects.toThrow(ValidationError);
+    const daveCtx: ActorContext = {
+      actorType: "user",
+      actorId: dave.id,
+      organizationId: fx.orgA,
+    };
+    await expect(deleteComment(db, daveCtx, commentId)).rejects.toThrow(
+      PermissionError,
+    );
     // the author may
     await deleteComment(db, actorInA(), commentId);
-    const listed = await listComments(db, fx.orgA, "customer", customerId);
+    let listed = await listComments(db, fx.orgA, "customer", customerId);
     expect(listed.map((c) => c.id)).not.toContain(commentId);
+
+    // and an owner/admin may delete someone else's note (comment.delete)
+    const { commentId: davesComment } = await addComment(db, daveCtx, {
+      entityType: "customer",
+      entityId: customerId,
+      body: "dave's note",
+    });
+    await deleteComment(db, actorInA(), davesComment); // alice is owner
+    listed = await listComments(db, fx.orgA, "customer", customerId);
+    expect(listed.map((c) => c.id)).not.toContain(davesComment);
   });
 
   it("viewers cannot comment; comments cannot target foreign customers", async () => {
@@ -227,6 +235,48 @@ describe("customer workspace (comments, receivables, statement)", () => {
     expect(kes!.lines.every((l) => l.amount.currency === "KES")).toBe(true);
     const usd = statement.find((s) => s.currency === "USD");
     expect(usd?.invoiced.amountMinor).toBe(10_000n);
+  });
+
+  it("a void invoice takes its payments off the statement and transactions", async () => {
+    const voidInvoiceId = newId();
+    await db.insert(invoices).values({
+      id: voidInvoiceId,
+      organizationId: fx.orgA,
+      customerId,
+      status: "void",
+      currency: "KES",
+      totalMinor: 999_999n,
+      amountPaidMinor: 100_000n,
+      issuedAt: new Date("2026-07-03T09:00:00Z"),
+    });
+    const voidPaymentId = newId();
+    await db.insert(payments).values({
+      id: voidPaymentId,
+      organizationId: fx.orgA,
+      invoiceId: voidInvoiceId,
+      amountMinor: 100_000n,
+      currency: "KES",
+      method: "cash",
+      paidAt: new Date("2026-07-03T10:00:00Z"),
+    });
+
+    // statement totals are identical to the previous test's expectations —
+    // neither the void invoice nor its payment moved the ledger
+    const statement = await getCustomerStatement(db, fx.orgA, customerId, {
+      from: new Date("2026-07-01T00:00:00Z"),
+      to: new Date("2026-08-01T00:00:00Z"),
+    });
+    const kes = statement.find((s) => s.currency === "KES");
+    expect(kes!.invoiced.amountMinor).toBe(650_000n);
+    expect(kes!.received.amountMinor).toBe(100_000n);
+    expect(kes!.closing.amountMinor).toBe(800_000n);
+
+    const { payments: listedPayments } = await getCustomerTransactions(
+      db,
+      fx.orgA,
+      customerId,
+    );
+    expect(listedPayments.map((p) => p.id)).not.toContain(voidPaymentId);
   });
 
   it("statement and receivables are tenant-isolated", async () => {
