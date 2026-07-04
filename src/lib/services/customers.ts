@@ -1,7 +1,16 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
-import { auditLog, customers, customerVersions } from "@/lib/db/schema";
+import {
+  auditLog,
+  customers,
+  customerVersions,
+  emailMessages,
+  invoices,
+  payments,
+  user,
+} from "@/lib/db/schema";
+import { Money } from "@/lib/domain/money";
 import { newId } from "@/lib/domain/ids";
 import {
   ConflictError,
@@ -252,7 +261,7 @@ export async function getCustomerVersions(
     .orderBy(desc(customerVersions.version));
 }
 
-/** Per-customer activity timeline straight from the audit log. */
+/** Per-customer activity timeline with WHO did it (brief §4.1). */
 export async function getCustomerTimeline(
   db: Database,
   organizationId: string,
@@ -265,10 +274,12 @@ export async function getCustomerTimeline(
       action: auditLog.action,
       actorType: auditLog.actorType,
       actorId: auditLog.actorId,
+      actorName: user.name,
       changes: auditLog.changes,
       createdAt: auditLog.createdAt,
     })
     .from(auditLog)
+    .leftJoin(user, eq(user.id, auditLog.actorId))
     .where(
       and(
         eq(auditLog.organizationId, organizationId),
@@ -277,5 +288,244 @@ export async function getCustomerTimeline(
       ),
     )
     .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
+}
+
+const OPEN_INVOICE_STATUSES = ["sent", "partial", "overdue"] as const;
+
+/**
+ * Outstanding receivables per currency (Zoho-style overview row). Grouped
+ * by currency and never summed across currencies — display-side rows, no
+ * conversion needed (§5.6).
+ */
+export async function getCustomerReceivables(
+  db: Database,
+  organizationId: string,
+  customerId: string,
+): Promise<Array<{ currency: string; outstanding: Money }>> {
+  const rows = await db
+    .select({
+      currency: invoices.currency,
+      totalMinor: invoices.totalMinor,
+      amountPaidMinor: invoices.amountPaidMinor,
+    })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, organizationId),
+        eq(invoices.customerId, customerId),
+        inArray(invoices.status, [...OPEN_INVOICE_STATUSES]),
+        isNull(invoices.deletedAt),
+      ),
+    );
+  const byCurrency = new Map<string, Money>();
+  for (const row of rows) {
+    const remaining = Money.fromMinor(
+      row.totalMinor - row.amountPaidMinor,
+      row.currency,
+    );
+    const prev = byCurrency.get(row.currency) ?? Money.zero(row.currency);
+    byCurrency.set(row.currency, prev.add(remaining));
+  }
+  return [...byCurrency.entries()]
+    .map(([currency, outstanding]) => ({ currency, outstanding }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+/** Invoices and payments for the customer (Transactions tab). */
+export async function getCustomerTransactions(
+  db: Database,
+  organizationId: string,
+  customerId: string,
+) {
+  const customerInvoices = await db
+    .select({
+      id: invoices.id,
+      displayNumber: invoices.displayNumber,
+      status: invoices.status,
+      currency: invoices.currency,
+      totalMinor: invoices.totalMinor,
+      amountPaidMinor: invoices.amountPaidMinor,
+      issueDate: invoices.issueDate,
+      dueDate: invoices.dueDate,
+    })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, organizationId),
+        eq(invoices.customerId, customerId),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .orderBy(desc(invoices.createdAt));
+
+  const customerPayments = await db
+    .select({
+      id: payments.id,
+      invoiceId: payments.invoiceId,
+      amountMinor: payments.amountMinor,
+      currency: payments.currency,
+      method: payments.method,
+      paidAt: payments.paidAt,
+    })
+    .from(payments)
+    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .where(
+      and(
+        eq(payments.organizationId, organizationId),
+        eq(invoices.customerId, customerId),
+        isNull(payments.deletedAt),
+      ),
+    )
+    .orderBy(desc(payments.paidAt));
+
+  return { invoices: customerInvoices, payments: customerPayments };
+}
+
+export interface StatementLine {
+  date: Date;
+  kind: "invoice" | "payment";
+  reference: string;
+  amount: Money; // invoices debit, payments credit
+}
+
+export interface CurrencyStatement {
+  currency: string;
+  opening: Money;
+  invoiced: Money;
+  received: Money;
+  closing: Money;
+  lines: StatementLine[];
+}
+
+/**
+ * Statement of accounts for a period, per currency (amounts in different
+ * currencies are never combined, §5.6). Opening balance = everything issued
+ * minus everything received before the period start; issued documents only
+ * (drafts and voids never appear on a statement).
+ */
+export async function getCustomerStatement(
+  db: Database,
+  organizationId: string,
+  customerId: string,
+  period: { from: Date; to: Date },
+): Promise<CurrencyStatement[]> {
+  const issuedFilter = and(
+    eq(invoices.organizationId, organizationId),
+    eq(invoices.customerId, customerId),
+    notInArray(invoices.status, ["draft", "void"]),
+    isNull(invoices.deletedAt),
+  );
+
+  const invoiceRows = await db
+    .select({
+      id: invoices.id,
+      displayNumber: invoices.displayNumber,
+      currency: invoices.currency,
+      totalMinor: invoices.totalMinor,
+      issuedAt: invoices.issuedAt,
+    })
+    .from(invoices)
+    .where(issuedFilter);
+
+  const paymentRows = await db
+    .select({
+      id: payments.id,
+      currency: payments.currency,
+      amountMinor: payments.amountMinor,
+      paidAt: payments.paidAt,
+    })
+    .from(payments)
+    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .where(
+      and(
+        eq(payments.organizationId, organizationId),
+        eq(invoices.customerId, customerId),
+        isNull(payments.deletedAt),
+      ),
+    );
+
+  const statements = new Map<string, CurrencyStatement>();
+  const bucket = (currency: string): CurrencyStatement => {
+    let s = statements.get(currency);
+    if (!s) {
+      s = {
+        currency,
+        opening: Money.zero(currency),
+        invoiced: Money.zero(currency),
+        received: Money.zero(currency),
+        closing: Money.zero(currency),
+        lines: [],
+      };
+      statements.set(currency, s);
+    }
+    return s;
+  };
+
+  for (const inv of invoiceRows) {
+    if (!inv.issuedAt) continue;
+    const s = bucket(inv.currency);
+    const amount = Money.fromMinor(inv.totalMinor, inv.currency);
+    if (inv.issuedAt < period.from) {
+      s.opening = s.opening.add(amount);
+    } else if (inv.issuedAt >= period.from && inv.issuedAt < period.to) {
+      s.invoiced = s.invoiced.add(amount);
+      s.lines.push({
+        date: inv.issuedAt,
+        kind: "invoice",
+        reference: inv.displayNumber ?? inv.id.slice(-8),
+        amount,
+      });
+    }
+  }
+  for (const pay of paymentRows) {
+    const s = bucket(pay.currency);
+    const amount = Money.fromMinor(pay.amountMinor, pay.currency);
+    if (pay.paidAt < period.from) {
+      s.opening = s.opening.subtract(amount);
+    } else if (pay.paidAt >= period.from && pay.paidAt < period.to) {
+      s.received = s.received.add(amount);
+      s.lines.push({
+        date: pay.paidAt,
+        kind: "payment",
+        reference: pay.id.slice(-8),
+        amount,
+      });
+    }
+  }
+
+  for (const s of statements.values()) {
+    s.closing = s.opening.add(s.invoiced).subtract(s.received);
+    s.lines.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+  return [...statements.values()].sort((a, b) =>
+    a.currency.localeCompare(b.currency),
+  );
+}
+
+/** Emails sent to this customer (Mails tab) — from the outbound email log. */
+export async function getCustomerMails(
+  db: Database,
+  organizationId: string,
+  customerEmail: string | null,
+  limit = 50,
+) {
+  if (!customerEmail) return [];
+  return db
+    .select({
+      id: emailMessages.id,
+      type: emailMessages.type,
+      subject: emailMessages.subject,
+      status: emailMessages.status,
+      createdAt: emailMessages.createdAt,
+    })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.organizationId, organizationId),
+        eq(emailMessages.recipient, customerEmail),
+      ),
+    )
+    .orderBy(desc(emailMessages.createdAt))
     .limit(limit);
 }
