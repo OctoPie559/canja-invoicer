@@ -10,8 +10,8 @@ import { organization } from "./auth";
 import { optimisticLock, softDelete, timestamps } from "./helpers";
 
 /**
- * Customers (§3.4). phone is an MSISDN — personal data under the Kenya DPA:
- * masked in logs, anonymized (not dropped) on data-subject deletion.
+ * Customers (§3.4) are companies (or individuals) — person-level contact
+ * info lives on customer_contacts, never here (decision, 2026-07-05).
  */
 export const customers = pgTable(
   "customers",
@@ -21,12 +21,17 @@ export const customers = pgTable(
       .notNull()
       .references(() => organization.id),
     name: text("name").notNull(),
-    email: text("email"),
-    phone: text("phone"),
+    customerType: text("customer_type").notNull().default("business"), // business | individual
+    // billing address
     addressLine1: text("address_line1"),
     addressLine2: text("address_line2"),
     city: text("city"),
     country: text("country"),
+    // shipping address (goods invoicing)
+    shippingAddressLine1: text("shipping_address_line1"),
+    shippingAddressLine2: text("shipping_address_line2"),
+    shippingCity: text("shipping_city"),
+    shippingCountry: text("shipping_country"),
     notes: text("notes"),
     preferredCurrency: text("preferred_currency"),
     ...timestamps,

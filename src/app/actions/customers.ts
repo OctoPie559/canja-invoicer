@@ -29,18 +29,35 @@ function mapError(error: unknown): ActionState {
 function customerFields(formData: FormData) {
   return {
     name: String(formData.get("name") ?? ""),
-    email: String(formData.get("email") ?? ""),
-    phone: String(formData.get("phone") ?? ""),
+    // raw strings at the transport boundary; the service's Zod schema is
+    // the authoritative validator (§5.2)
+    customerType: String(
+      formData.get("customerType") ?? "business",
+    ) as CreateCustomerInput["customerType"],
     addressLine1: String(formData.get("addressLine1") ?? ""),
     addressLine2: String(formData.get("addressLine2") ?? ""),
     city: String(formData.get("city") ?? ""),
     country: String(formData.get("country") ?? ""),
+    shippingAddressLine1: String(formData.get("shippingAddressLine1") ?? ""),
+    shippingAddressLine2: String(formData.get("shippingAddressLine2") ?? ""),
+    shippingCity: String(formData.get("shippingCity") ?? ""),
+    shippingCountry: String(formData.get("shippingCountry") ?? ""),
     notes: String(formData.get("notes") ?? ""),
-    // raw string at the transport boundary; the service's Zod schema is
-    // the authoritative validator (§5.2)
     preferredCurrency: String(
       formData.get("preferredCurrency") ?? "",
     ) as CreateCustomerInput["preferredCurrency"],
+  };
+}
+
+/** Optional inline primary contact from the create form. */
+function inlinePrimaryContact(formData: FormData) {
+  const firstName = String(formData.get("contactFirstName") ?? "").trim();
+  if (!firstName) return null;
+  return {
+    firstName,
+    lastName: String(formData.get("contactLastName") ?? ""),
+    email: String(formData.get("contactEmail") ?? ""),
+    mobile: String(formData.get("contactMobile") ?? ""),
   };
 }
 
@@ -54,7 +71,10 @@ export async function createCustomerAction(
   let customerId: string;
   try {
     const result = await runWithActor(ctx, () =>
-      createCustomer(getDb(), ctx, customerFields(formData)),
+      createCustomer(getDb(), ctx, {
+        ...customerFields(formData),
+        primaryContact: inlinePrimaryContact(formData),
+      }),
     );
     customerId = result.customerId;
   } catch (error) {

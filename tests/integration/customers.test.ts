@@ -42,8 +42,6 @@ describe("customers service", () => {
 
   const base = {
     name: "Wanjiku Design Studio",
-    email: "billing@wanjiku.example",
-    phone: "+254712345678",
     addressLine1: "Riverside Drive 12",
     city: "Nairobi",
     country: "KE",

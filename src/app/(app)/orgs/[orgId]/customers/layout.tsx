@@ -1,6 +1,6 @@
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
-import { listCustomers } from "@/lib/services/customers";
+import { listCustomersWithPrimaryContact } from "@/lib/services/customers";
 import { requireMembership } from "@/lib/transport/org";
 import { CustomerListPane } from "@/components/customer-list-pane";
 import { Card } from "@/components/ui/card";
@@ -18,18 +18,14 @@ export default async function CustomersLayout({
 }) {
   const { orgId } = await params;
   const { role } = await requireMembership(orgId);
-  const customers = await listCustomers(getDb(), orgId);
+  const customers = await listCustomersWithPrimaryContact(getDb(), orgId);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
       <Card className="hidden h-[calc(100vh-8.5rem)] overflow-hidden py-0 lg:block">
         <CustomerListPane
           organizationId={orgId}
-          customers={customers.map((c) => ({
-            id: c.id,
-            name: c.name,
-            email: c.email,
-          }))}
+          customers={customers}
           canCreate={can(role, "customer.create")}
         />
       </Card>

@@ -146,7 +146,8 @@ Better Auth (with the organization plugin) owns these tables; we configure it to
 
 | Table | Purpose / key columns |
 |---|---|
-| `customers` | Name, email, **phone (MSISDN — personal data: masked in logs, anonymized on deletion, never dropped from financial records)**, billing address, notes, preferred currency. Soft delete + `version`. |
+| `customers` | The company/individual being billed: name, customer type, billing + shipping addresses, notes, preferred currency. **No person-level contact info here** — that lives on `customer_contacts` (decision, 2026-07-05). Soft delete + `version`. |
+| `customer_contacts` | Contact persons for a customer: salutation, first/last name, email, **work phone + mobile (MSISDNs — personal data: masked in logs, anonymized on deletion, never dropped from financial records)**, designation, department, `is_primary` (at most one live primary per customer, DB-enforced by partial unique index). Audited onto the customer's timeline. Soft delete + `version`. |
 | `customer_versions` | Layer-3 history: full row image per change. Answers "what was this customer's address on date X". |
 | `products` | Catalog items: name, description, unit label, `unit_price_minor` + `currency`, default `tax_rate_id`. `version`. |
 | `product_versions` | Layer-3 history — price changes are the headline use case. |
@@ -306,5 +307,6 @@ This is a financial tool, so tests are part of every slice's deliverable, not a 
 | Kenyan-entity payout prerequisites (KRA PIN, registration, bank) | Open — confirm before slice 8 |
 | Recurring: auto-issue vs draft-per-run default | Open — decide in slice 7; schema supports both |
 | Branch flow: slice → `staging` (staging env) → `main` (production); verifier gate applies to slice merges into either protected branch | **Locked** (user decision, 2026-07-03) |
+| Customers are companies/individuals; ALL person-level contact info lives on `customer_contacts` (multiple per customer, one primary). `customers.email/phone` dropped, backfilled into primary contacts by migration 0007. Invoice sending (slice 3) addresses contact persons. | **Locked** (user decision, 2026-07-05) |
 | Component library: **shadcn/ui** (radix-lyra style, neutral base, lucide icons, user-selected theme in `globals.css`). All UI builds on `src/components/ui` primitives; no bespoke one-off styling for things a primitive covers. | **Locked** (user decision, 2026-07-03) |
 | App shell: full-height sidebar (shadcn `sidebar` primitive) with wordmark, org switcher at top, and workspace nav; content header carries the user menu. Org-scoped routes render inside `orgs/[orgId]/layout.tsx`; org-less pages use a plain top bar; `/dashboard` redirects into the org. New sections join the sidebar as slices land. | **Locked** (user decision, 2026-07-03) |
