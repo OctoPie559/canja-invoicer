@@ -12,5 +12,8 @@ export default defineConfig({
     // Integration tests share one PGlite instance per file; keep files isolated.
     pool: "forks",
     testTimeout: 30_000,
+    // parallel PGlite startups + the full migration set can exceed the 10s
+    // default hook timeout on a busy machine
+    hookTimeout: 30_000,
   },
 });

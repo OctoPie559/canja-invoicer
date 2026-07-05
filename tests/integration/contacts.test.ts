@@ -165,6 +165,40 @@ describe("contact persons", () => {
     ).rejects.toThrow(PermissionError);
   });
 
+  it("contacts are read-isolated across tenants (service and RLS)", async () => {
+    // service read through org B's scope sees none of org A's contacts
+    const viaService = await listContacts(db, fx.orgB, customerId);
+    expect(viaService).toEqual([]);
+    // and an unfiltered SELECT under org B's RLS-armed transaction leaks
+    // nothing either — the backstop, not just the WHERE clause
+    const { withOrgTransaction } = await import("@/lib/db/tx");
+    const { sql } = await import("drizzle-orm");
+    const { rows } = await import("../helpers/db");
+    const visible = await withOrgTransaction(db, fx.orgB, async (tx) =>
+      rows(await tx.execute(sql`SELECT organization_id FROM customer_contacts`)),
+    );
+    expect(visible.every((r) => r.organization_id === fx.orgB)).toBe(true);
+    expect(
+      visible.some((r) => r.organization_id === fx.orgA),
+    ).toBe(false);
+  });
+
+  it("deleting a customer tombstones its contact persons too", async () => {
+    const { customerId: doomed } = await createCustomer(db, actorInA(), {
+      name: "Doomed Ltd",
+      primaryContact: { firstName: "Grace", email: "grace@doomed.example" },
+    });
+    const { deleteCustomer } = await import("@/lib/services/customers");
+    await deleteCustomer(db, actorInA(), { id: doomed, version: 1 });
+    const remaining = await listContacts(db, fx.orgA, doomed);
+    expect(remaining).toEqual([]);
+    const [raw] = await db
+      .select({ deletedAt: customerContacts.deletedAt })
+      .from(customerContacts)
+      .where(eq(customerContacts.customerId, doomed));
+    expect(raw.deletedAt).not.toBeNull(); // tombstoned, not hard-deleted
+  });
+
   it("soft delete removes the contact, keeps the audit trail", async () => {
     const { contactId } = await createContact(db, actorInA(), {
       customerId,

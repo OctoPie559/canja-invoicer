@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
@@ -201,6 +201,23 @@ export async function deleteCustomer(
       .update(customers)
       .set({ deletedAt: new Date(), version: nextVersion, updatedAt: new Date() })
       .where(eq(customers.id, data.id));
+    // tombstone the contact persons with their customer (DPA consistency —
+    // person data must not stay live under a deleted company)
+    const tombstoned = await tx
+      .update(customerContacts)
+      .set({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+        version: sql`${customerContacts.version} + 1`,
+      })
+      .where(
+        and(
+          eq(customerContacts.organizationId, ctx.organizationId),
+          eq(customerContacts.customerId, data.id),
+          isNull(customerContacts.deletedAt),
+        ),
+      )
+      .returning({ id: customerContacts.id });
     const [row] = await tx
       .select()
       .from(customers)
@@ -217,7 +234,13 @@ export async function deleteCustomer(
       action: "customer.deleted",
       entityType: "customer",
       entityId: data.id,
-      changes: { before: { deletedAt: null }, after: { deletedAt: row.deletedAt } },
+      changes: {
+        before: { deletedAt: null },
+        after: { deletedAt: row.deletedAt },
+        ...(tombstoned.length > 0
+          ? { contactsRemoved: tombstoned.length }
+          : {}),
+      },
     });
   });
 }

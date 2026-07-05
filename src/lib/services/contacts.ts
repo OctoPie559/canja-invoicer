@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import { customerContacts, customers } from "@/lib/db/schema";
@@ -62,15 +62,24 @@ async function assertCustomerInOrg(
   if (!row) throw new NotFoundError("customer");
 }
 
+/**
+ * Demote the current primary (returns demoted ids for the promotion's audit
+ * row). Bumps the demoted row's version so a concurrently open edit of it
+ * hits the optimistic lock instead of silently writing over the demotion.
+ */
 async function demoteCurrentPrimary(
   tx: Transaction,
   organizationId: string,
   customerId: string,
   exceptContactId?: string,
-): Promise<void> {
-  await tx
+): Promise<string[]> {
+  const demoted = await tx
     .update(customerContacts)
-    .set({ isPrimary: false, updatedAt: new Date() })
+    .set({
+      isPrimary: false,
+      updatedAt: new Date(),
+      version: sql`${customerContacts.version} + 1`,
+    })
     .where(
       and(
         eq(customerContacts.organizationId, organizationId),
@@ -79,7 +88,22 @@ async function demoteCurrentPrimary(
         isNull(customerContacts.deletedAt),
         ...(exceptContactId ? [ne(customerContacts.id, exceptContactId)] : []),
       ),
-    );
+    )
+    .returning({ id: customerContacts.id });
+  return demoted.map((d) => d.id);
+}
+
+/**
+ * Two simultaneous promotions can both find nothing to demote; the partial
+ * unique index stops the loser — surface that as a typed conflict.
+ */
+function mapPrimaryRace(error: unknown): never {
+  for (let e = error; e instanceof Error; e = e.cause as Error | undefined) {
+    if (e.message.includes("customer_contacts_primary_idx")) {
+      throw new ConflictError("contact");
+    }
+  }
+  throw error;
 }
 
 /** Insert a contact inside an existing org transaction (also used by
@@ -101,16 +125,21 @@ export async function insertContact(
   isPrimary: boolean,
 ): Promise<string> {
   const contactId = newId();
+  let demoted: string[] = [];
   if (isPrimary) {
-    await demoteCurrentPrimary(tx, ctx.organizationId, customerId);
+    demoted = await demoteCurrentPrimary(tx, ctx.organizationId, customerId);
   }
-  await tx.insert(customerContacts).values({
-    id: contactId,
-    organizationId: ctx.organizationId,
-    customerId,
-    ...fields,
-    isPrimary,
-  });
+  try {
+    await tx.insert(customerContacts).values({
+      id: contactId,
+      organizationId: ctx.organizationId,
+      customerId,
+      ...fields,
+      isPrimary,
+    });
+  } catch (error) {
+    mapPrimaryRace(error);
+  }
   await writeAudit(tx, ctx, {
     action: "contact.added",
     entityType: "customer",
@@ -121,6 +150,7 @@ export async function insertContact(
         name: [fields.firstName, fields.lastName].filter(Boolean).join(" "),
         isPrimary,
       },
+      ...(demoted.length > 0 ? { demotedPrimary: demoted } : {}),
     },
   });
   return contactId;
@@ -188,23 +218,32 @@ export async function updateContact(
     const diff = changedFields(current, next, EDITABLE_FIELDS);
     if (diff.changed.length === 0) return;
 
+    let demoted: string[] = [];
     if (next.isPrimary && !current.isPrimary) {
-      await demoteCurrentPrimary(
+      demoted = await demoteCurrentPrimary(
         tx,
         ctx.organizationId,
         current.customerId,
         current.id,
       );
     }
-    await tx
-      .update(customerContacts)
-      .set({ ...next, version: current.version + 1, updatedAt: new Date() })
-      .where(eq(customerContacts.id, data.id));
+    try {
+      await tx
+        .update(customerContacts)
+        .set({ ...next, version: current.version + 1, updatedAt: new Date() })
+        .where(eq(customerContacts.id, data.id));
+    } catch (error) {
+      mapPrimaryRace(error);
+    }
     await writeAudit(tx, ctx, {
       action: "contact.updated",
       entityType: "customer",
       entityId: current.customerId,
-      changes: { before: diff.before, after: diff.after },
+      changes: {
+        before: diff.before,
+        after: diff.after,
+        ...(demoted.length > 0 ? { demotedPrimary: demoted } : {}),
+      },
     });
   });
 }
