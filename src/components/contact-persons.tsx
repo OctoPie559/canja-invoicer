@@ -8,6 +8,7 @@ import {
   deleteContactAction,
   updateContactAction,
 } from "@/app/actions/contacts";
+import { contactDisplayName } from "@/lib/format/contact";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -46,15 +47,6 @@ export interface ContactView {
   isPrimary: boolean;
 }
 
-export function contactDisplayName(contact: {
-  salutation?: string | null;
-  firstName: string;
-  lastName?: string | null;
-}): string {
-  return [contact.salutation, contact.firstName, contact.lastName]
-    .filter(Boolean)
-    .join(" ");
-}
 
 function ContactFormFields({ contact }: { contact?: ContactView }) {
   return (

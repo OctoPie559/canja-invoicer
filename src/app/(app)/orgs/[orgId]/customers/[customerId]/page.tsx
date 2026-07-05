@@ -17,10 +17,8 @@ import {
 import { requireMembership } from "@/lib/transport/org";
 import { deleteCustomerAction } from "@/app/actions/customers";
 import { ActivityTimeline } from "@/components/activity-timeline";
-import {
-  ContactPersons,
-  contactDisplayName,
-} from "@/components/contact-persons";
+import { ContactPersons } from "@/components/contact-persons";
+import { contactDisplayName } from "@/lib/format/contact";
 import { CustomerComments } from "@/components/customer-comments";
 import { DeleteButton } from "@/components/delete-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
