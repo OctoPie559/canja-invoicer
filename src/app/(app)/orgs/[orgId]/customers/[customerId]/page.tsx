@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/customers";
 import { requireMembership } from "@/lib/transport/org";
 import { deleteCustomerAction } from "@/app/actions/customers";
-import { ActivityTimeline } from "@/components/activity-timeline";
+import { ActivityRoadmap } from "@/components/activity-roadmap";
 import { ContactPersons } from "@/components/contact-persons";
 import { contactDisplayName } from "@/lib/format/contact";
 import { CustomerComments } from "@/components/customer-comments";
@@ -280,19 +280,16 @@ export default async function CustomerWorkspacePage({
                     </TableBody>
                   </Table>
                 )}
+
+                <div className="mt-6 border-t pt-6">
+                  <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                    Activity
+                  </h3>
+                  <ActivityRoadmap entries={timeline} />
+                </div>
               </CardContent>
             </Card>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-heading text-base">
-                Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ActivityTimeline entries={timeline} />
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="comments">
