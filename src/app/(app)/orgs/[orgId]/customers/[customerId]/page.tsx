@@ -24,12 +24,7 @@ import { DeleteButton } from "@/components/delete-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -165,10 +160,11 @@ export default async function CustomerWorkspacePage({
           <TabsTrigger value="statement">Statement</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.2fr]">
-            <Card>
-              <CardContent className="space-y-5 pt-6">
+        <TabsContent value="overview">
+          <Card>
+            <CardContent className="grid gap-6 pt-6 lg:grid-cols-[1fr_1.2fr]">
+              {/* section 1: company information */}
+              <div className="space-y-5 lg:border-r lg:pr-6">
                 {/* primary contact card (design ref: person atop the column) */}
                 <div className="flex items-center gap-3 rounded-md bg-muted/50 p-3">
                   <Avatar className="size-10">
@@ -245,15 +241,13 @@ export default async function CustomerWorkspacePage({
                   contacts={contacts}
                   canEdit={can(role, "customer.update")}
                 />
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="font-heading text-base">
+              </div>
+
+              {/* section 2: receivables + activity */}
+              <div className="border-t pt-6 lg:border-t-0 lg:pt-0">
+                <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
                   Receivables
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                </h3>
                 {receivables.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Nothing outstanding.
@@ -287,9 +281,9 @@ export default async function CustomerWorkspacePage({
                   </h3>
                   <ActivityRoadmap entries={timeline} />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="comments">
@@ -307,13 +301,14 @@ export default async function CustomerWorkspacePage({
           </Card>
         </TabsContent>
 
-        <TabsContent value="transactions" className="space-y-4">
+        <TabsContent value="transactions">
           <Card>
-            <CardHeader>
-              <CardTitle className="font-heading text-base">Invoices</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {transactions.invoices.length === 0 ? (
+            <CardContent className="space-y-6 pt-6">
+              <section>
+                <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                  Invoices
+                </h3>
+                {transactions.invoices.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No invoices yet — invoicing arrives with the next slice.
                 </p>
@@ -346,15 +341,13 @@ export default async function CustomerWorkspacePage({
                     ))}
                   </TableBody>
                 </Table>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-heading text-base">Payments</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {transactions.payments.length === 0 ? (
+                )}
+              </section>
+              <section className="border-t pt-6">
+                <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                  Payments
+                </h3>
+                {transactions.payments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No payments recorded yet.
                 </p>
@@ -381,19 +374,18 @@ export default async function CustomerWorkspacePage({
                     ))}
                   </TableBody>
                 </Table>
-              )}
+                )}
+              </section>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="mails">
           <Card>
-            <CardHeader>
-              <CardTitle className="font-heading text-base">
+            <CardContent className="pt-6">
+              <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
                 Emails sent
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+              </h3>
               {mails.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {contacts.some((c) => c.email)
@@ -453,21 +445,21 @@ export default async function CustomerWorkspacePage({
               </Button>
             ))}
           </div>
-          {statement.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                No transactions in {period.label.toLowerCase()}.
-              </CardContent>
-            </Card>
-          ) : (
-            statement.map((s) => (
-              <Card key={s.currency}>
-                <CardHeader>
-                  <CardTitle className="font-heading text-base">
-                    Statement of accounts — {s.currency} ({period.label})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+          <Card>
+            <CardContent className="space-y-6 pt-6">
+              {statement.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No transactions in {period.label.toLowerCase()}.
+                </p>
+              ) : (
+                statement.map((s, index) => (
+                  <section
+                    key={s.currency}
+                    className={index > 0 ? "space-y-4 border-t pt-6" : "space-y-4"}
+                  >
+                    <h3 className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                      Statement of accounts — {s.currency} ({period.label})
+                    </h3>
                   <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                     <div>
                       <dt className="text-muted-foreground">Opening balance</dt>
@@ -523,10 +515,11 @@ export default async function CustomerWorkspacePage({
                       </TableBody>
                     </Table>
                   )}
-                </CardContent>
-              </Card>
-            ))
-          )}
+                  </section>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
