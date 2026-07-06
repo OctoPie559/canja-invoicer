@@ -16,6 +16,7 @@ import {
   requireSession,
   userActor,
 } from "@/lib/transport/session";
+import { invitationEmail } from "@/lib/email/templates";
 
 /**
  * Server Actions are thin wrappers (ARCHITECTURE.md §1.2): authenticate,
@@ -67,13 +68,20 @@ export async function inviteMemberAction(
   const ctx = await userActor(session.user.id, organizationId);
   try {
     await runWithActor(ctx, () =>
-      inviteMember(getDb(), ctx, {
-        email: String(formData.get("email") ?? ""),
-        role: String(formData.get("role") ?? "member") as
-          | "admin"
-          | "member"
-          | "viewer",
-      }),
+      inviteMember(
+        getDb(),
+        ctx,
+        {
+          email: String(formData.get("email") ?? ""),
+          role: String(formData.get("role") ?? "member") as
+            | "admin"
+            | "member"
+            | "viewer",
+        },
+        // transport injects the rich HTML template; the service default is
+        // plain text so it stays framework-free
+        { renderInvitation: invitationEmail },
+      ),
     );
   } catch (error) {
     return mapError(error);
