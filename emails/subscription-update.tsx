@@ -58,7 +58,7 @@ export const SubscriptionUpdate = ({
               <Section className="bg-bg border-stroke rounded-[8px] border">
                 <Section className="mobile:px-6! px-10 pt-16">
                   <Img
-                    src={`${baseUrl}/static/collage/collage-image-2.png`}
+                    src={`${baseUrl}/static/color-logo.png`}
                     alt=""
                     width={148}
                     height={111}

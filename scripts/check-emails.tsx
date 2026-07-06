@@ -45,7 +45,7 @@ async function main() {
     "Erick",
     "invoicer",
     "verify",
-    "logo_assets/color-logo.png",
+    "static/color-logo.png",
   ]);
 
   const p = await renderBoth(
@@ -54,7 +54,7 @@ async function main() {
   assert("password reset", p.html, p.text, [
     "invoicer",
     "reset",
-    "logo_assets/color-logo.png",
+    "static/color-logo.png",
   ]);
 
   const i = await renderBoth(
@@ -70,7 +70,7 @@ async function main() {
     "Erick Ngure",
     "Njogu-ini Career Association",
     "member",
-    "logo_assets/color-logo.png",
+    "static/color-logo.png",
   ]);
 
   if (failed) {

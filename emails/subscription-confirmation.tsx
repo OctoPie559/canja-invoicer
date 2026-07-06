@@ -64,7 +64,7 @@ export const SubscriptionConfirmation = ({
               <Section className="bg-bg border-stroke rounded-[8px] border">
                 <Section className="mobile:px-6! px-10 pt-16">
                   <Img
-                    src={`${baseUrl}/emails/static/color-logo.png`}
+                    src={`${baseUrl}/static/color-logo.png`}
                     alt=""
                     width={148}
                     height={111}
