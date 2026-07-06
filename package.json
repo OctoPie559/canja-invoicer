@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "email:check": "tsx --tsconfig tsconfig.email.json scripts/check-emails.tsx"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

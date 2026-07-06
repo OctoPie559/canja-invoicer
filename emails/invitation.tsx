@@ -13,20 +13,26 @@ import { EmailFooter, EmailLogo } from './components';
 import { EmailFonts } from './fonts';
 import { emailTheme } from './theme';
 
-interface VerificationEmailProps {
-  /** Recipient's name, for the greeting. */
-  name: string;
-  /** Verification link. */
+interface InvitationEmailProps {
+  /** Who sent the invitation. */
+  inviterName: string;
+  /** Organization being joined. */
+  organizationName: string;
+  /** Role the invitee will hold. */
+  role: string;
+  /** Accept link. */
   url: string;
-  /** Absolute origin for hosted images (email clients need full URLs). */
+  /** Absolute origin for hosted images. */
   baseUrl: string;
 }
 
-export const VerificationEmail = ({
-  name,
+export const InvitationEmail = ({
+  inviterName,
+  organizationName,
+  role,
   url,
   baseUrl,
-}: VerificationEmailProps) => (
+}: InvitationEmailProps) => (
   <Tailwind config={emailTheme}>
     <Html>
       <Head>
@@ -34,7 +40,9 @@ export const VerificationEmail = ({
       </Head>
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-        <Preview>Confirm your email to start sending invoices</Preview>
+        <Preview>
+          {inviterName} invited you to {organizationName} on invoicer
+        </Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
             <Section className="bg-bg border-stroke rounded-[8px] border">
@@ -43,14 +51,16 @@ export const VerificationEmail = ({
               <Section className="mobile:px-6! px-10 pt-8">
                 <Section className="mb-9">
                   <Text className="font-48 text-fg m-0 font-sans">
-                    Almost there
+                    You&apos;re invited
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                    Hi {name}, welcome to invoicer.
+                    {inviterName} has invited you to join{' '}
+                    <strong>{organizationName}</strong> on invoicer as{' '}
+                    <strong>{role}</strong>.
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0">
-                    Confirm your email address to unlock sending invoices —
-                    everything else is ready when you are.
+                    Accept the invitation to work on invoices, customers, and
+                    payments together.
                   </Text>
                 </Section>
 
@@ -58,14 +68,14 @@ export const VerificationEmail = ({
                   href={url}
                   className="bg-brand font-15 font-inter text-fg-inverted inline-block border-none px-5 py-3.5 text-center"
                 >
-                  Confirm email
+                  Accept invitation
                 </Button>
               </Section>
 
               <Section className="mobile:px-6! px-10 pt-16 pb-8">
                 <Text className="font-11 font-inter text-fg-3 m-0 max-w-[310px]">
-                  If you didn&apos;t create an invoicer account, you can safely
-                  ignore this email.
+                  This invitation expires in 7 days. If you weren&apos;t
+                  expecting it, you can safely ignore this email.
                 </Text>
               </Section>
 
@@ -78,10 +88,12 @@ export const VerificationEmail = ({
   </Tailwind>
 );
 
-VerificationEmail.PreviewProps = {
-  name: 'Erick',
-  url: 'https://example.com/verify',
+InvitationEmail.PreviewProps = {
+  inviterName: 'Erick Ngure',
+  organizationName: 'Njogu-ini Career Association',
+  role: 'member',
+  url: 'https://example.com/invitations/abc',
   baseUrl: '',
-} satisfies VerificationEmailProps;
+} satisfies InvitationEmailProps;
 
-export default VerificationEmail;
+export default InvitationEmail;
