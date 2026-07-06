@@ -10,4 +10,5 @@ export * from "./documents";
 export * from "./payments";
 export * from "./audit";
 export * from "./comms";
+export * from "./comments";
 export * from "./billing";

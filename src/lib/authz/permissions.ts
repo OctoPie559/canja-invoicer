@@ -29,6 +29,8 @@ export type Action =
   | "credit_note.issue"
   | "recurring.manage"
   | "payment.record"
+  | "comment.create"
+  | "comment.delete" // any comment; authors may always delete their own
   | "member.invite"
   | "member.remove"
   | "member.role_change"
@@ -57,10 +59,12 @@ const MEMBER: Action[] = [
   "estimate.convert",
   "credit_note.create",
   "payment.record",
+  "comment.create",
 ];
 
 const ADMIN: Action[] = [
   ...MEMBER,
+  "comment.delete",
   "customer.delete",
   "product.delete",
   "invoice.void",
