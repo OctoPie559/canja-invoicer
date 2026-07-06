@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { ChevronLeft, Pencil } from "lucide-react";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
@@ -52,6 +52,15 @@ export default async function ProductWorkspacePage({
 
   return (
     <div className="space-y-4">
+      {/* unlike customers there is no persistent list pane, so the detail
+          view needs an explicit way back at every screen size */}
+      <Link
+        href={`/orgs/${orgId}/products`}
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ChevronLeft className="size-4" />
+        All products
+      </Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <h1 className="font-heading text-xl font-semibold text-foreground">
