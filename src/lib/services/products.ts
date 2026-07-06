@@ -3,6 +3,8 @@ import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   auditLog,
+  invoiceLineItems,
+  invoices,
   organizationSettings,
   products,
   productVersions,
@@ -251,6 +253,40 @@ export async function deleteProduct(
       changes: { before: { deletedAt: null }, after: { deletedAt: row.deletedAt } },
     });
   });
+}
+
+/**
+ * Invoice lines that used this product (Transactions tab) — real query,
+ * populated once slice 2 starts writing line items.
+ */
+export async function getProductTransactions(
+  db: Database,
+  organizationId: string,
+  productId: string,
+) {
+  return db
+    .select({
+      id: invoiceLineItems.id,
+      invoiceId: invoices.id,
+      displayNumber: invoices.displayNumber,
+      status: invoices.status,
+      issueDate: invoices.issueDate,
+      quantity: invoiceLineItems.quantity,
+      unitPriceMinor: invoiceLineItems.unitPriceMinor,
+      lineTotalMinor: invoiceLineItems.lineTotalMinor,
+      currency: invoices.currency,
+    })
+    .from(invoiceLineItems)
+    .innerJoin(invoices, eq(invoices.id, invoiceLineItems.invoiceId))
+    .where(
+      and(
+        eq(invoiceLineItems.organizationId, organizationId),
+        eq(invoiceLineItems.productId, productId),
+        isNull(invoiceLineItems.deletedAt),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .orderBy(desc(invoices.createdAt));
 }
 
 /** Distinct unit labels already used by the org (unit combobox options). */

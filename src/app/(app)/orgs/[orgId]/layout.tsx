@@ -46,7 +46,7 @@ export default async function OrgShellLayout({
             />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 p-6">{children}</main>
+        <main className="w-full max-w-6xl flex-1 p-3">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );
