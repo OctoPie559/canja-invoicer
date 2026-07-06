@@ -17,6 +17,7 @@ import {
   getProductTimeline,
   getProductVersions,
   listProducts,
+  listUnitLabels,
   updateProduct,
 } from "@/lib/services/products";
 import { createTestDb } from "../helpers/db";
@@ -237,6 +238,56 @@ describe("products service", () => {
     } finally {
       await upgradeToPro(db, fx.orgA);
     }
+  });
+
+  it("stores the product type, defaults to service, and audits changes", async () => {
+    const { productId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "Branding kit",
+      productType: "goods",
+    });
+    const row = await getProduct(db, fx.orgA, productId);
+    expect(row?.productType).toBe("goods");
+
+    // default when unspecified
+    const { productId: serviceId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "Retainer service",
+    });
+    expect((await getProduct(db, fx.orgA, serviceId))?.productType).toBe(
+      "service",
+    );
+
+    // switching type is a plain product.updated, not a price event
+    await updateProduct(db, actorInA(), {
+      ...base,
+      id: productId,
+      version: 1,
+      name: "Branding kit",
+      productType: "service",
+    });
+    expect((await getProduct(db, fx.orgA, productId))?.productType).toBe(
+      "service",
+    );
+  });
+
+  it("lists the org's distinct unit labels, tenant-scoped", async () => {
+    await createProduct(db, actorInA(), {
+      ...base,
+      name: "Hourly consulting",
+      unitLabel: "hour",
+    });
+    await createProduct(db, actorInA(), {
+      ...base,
+      name: "Sprint block",
+      unitLabel: "sprint",
+    });
+    const labels = await listUnitLabels(db, fx.orgA);
+    expect(labels).toContain("hour");
+    expect(labels).toContain("sprint");
+    // org B sees none of org A's vocabulary
+    const foreign = await listUnitLabels(db, fx.orgB);
+    expect(foreign).not.toContain("sprint");
   });
 
   it("soft-deletes products, keeping history and audit", async () => {

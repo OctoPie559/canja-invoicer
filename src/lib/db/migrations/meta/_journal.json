@@ -64,6 +64,13 @@
       "when": 1783237458764,
       "tag": "0008_drop_customer_contact_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783330384030,
+      "tag": "0009_product_type",
+      "breakpoints": true
     }
   ]
 }

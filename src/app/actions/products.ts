@@ -28,6 +28,9 @@ function mapError(error: unknown): ActionState {
 function productFields(formData: FormData) {
   return {
     name: String(formData.get("name") ?? ""),
+    productType: (formData.get("productType") === "goods"
+      ? "goods"
+      : "service") as "goods" | "service",
     description: String(formData.get("description") ?? ""),
     unitLabel: String(formData.get("unitLabel") ?? ""),
     unitPrice: String(formData.get("unitPrice") ?? ""),

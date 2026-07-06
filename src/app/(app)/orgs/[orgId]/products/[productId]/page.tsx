@@ -6,6 +6,7 @@ import {
   getProduct,
   getProductTimeline,
   getProductVersions,
+  listUnitLabels,
 } from "@/lib/services/products";
 import { requireMembership } from "@/lib/transport/org";
 import { deleteProductAction } from "@/app/actions/products";
@@ -31,9 +32,10 @@ export default async function ProductDetailPage({
 
   const product = await getProduct(db, orgId, productId);
   if (!product) notFound();
-  const [timeline, versions] = await Promise.all([
+  const [timeline, versions, unitOptions] = await Promise.all([
     getProductTimeline(db, orgId, productId),
     getProductVersions(db, orgId, productId),
+    listUnitLabels(db, orgId),
   ]);
   const price = Money.fromMinor(product.unitPriceMinor, product.currency);
 
@@ -68,11 +70,13 @@ export default async function ProductDetailPage({
           <CardContent>
             <ProductForm
               organizationId={orgId}
+              unitOptions={unitOptions}
               cancelHref={`/orgs/${orgId}/products`}
               product={{
                 id: product.id,
                 version: product.version,
                 name: product.name,
+                productType: product.productType,
                 description: product.description,
                 unitLabel: product.unitLabel,
                 unitPrice: price.toDecimalString(),

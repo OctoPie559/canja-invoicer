@@ -39,6 +39,7 @@ import {
 
 const EDITABLE_FIELDS = [
   "name",
+  "productType",
   "description",
   "unitLabel",
   "unitPriceMinor",
@@ -85,6 +86,7 @@ export async function createProduct(
       id: productId,
       organizationId: ctx.organizationId,
       name: data.name,
+      productType: data.productType,
       description: data.description,
       unitLabel: data.unitLabel,
       unitPriceMinor: price.amountMinor,
@@ -149,6 +151,7 @@ export async function updateProduct(
 
     const next = {
       name: data.name,
+      productType: data.productType,
       description: data.description ?? null,
       unitLabel: data.unitLabel ?? null,
       unitPriceMinor: price.amountMinor,
@@ -248,6 +251,26 @@ export async function deleteProduct(
       changes: { before: { deletedAt: null }, after: { deletedAt: row.deletedAt } },
     });
   });
+}
+
+/** Distinct unit labels already used by the org (unit combobox options). */
+export async function listUnitLabels(
+  db: Database,
+  organizationId: string,
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ unitLabel: products.unitLabel })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        isNull(products.deletedAt),
+      ),
+    );
+  return rows
+    .map((r) => r.unitLabel)
+    .filter((u): u is string => Boolean(u))
+    .sort();
 }
 
 /** Org-scoped reads. */
