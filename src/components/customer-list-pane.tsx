@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 export interface CustomerListEntry {
   id: string;
   name: string;
-  email: string | null;
+  primaryContact: { name: string; email: string | null } | null;
 }
 
 /** Left pane of the customers master-detail view (Zoho-style). */
@@ -28,7 +28,9 @@ export function CustomerListPane({
   const [query, setQuery] = useState("");
   const filtered = query
     ? customers.filter((c) =>
-        `${c.name} ${c.email ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+        `${c.name} ${c.primaryContact?.name ?? ""} ${c.primaryContact?.email ?? ""}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
       )
     : customers;
 
@@ -70,9 +72,9 @@ export function CustomerListPane({
                 <span className="block font-medium text-foreground">
                   {customer.name}
                 </span>
-                {customer.email && (
+                {customer.primaryContact && (
                   <span className="block truncate text-xs text-muted-foreground">
-                    {customer.email}
+                    {customer.primaryContact.email ?? customer.primaryContact.name}
                   </span>
                 )}
               </Link>

@@ -15,10 +15,13 @@ import {
   deleteProduct,
   getProduct,
   getProductTimeline,
+  getProductTransactions,
   getProductVersions,
   listProducts,
+  listUnitLabels,
   updateProduct,
 } from "@/lib/services/products";
+import { newId } from "@/lib/domain/ids";
 import { createTestDb } from "../helpers/db";
 import {
   createTwoOrgFixture,
@@ -237,6 +240,101 @@ describe("products service", () => {
     } finally {
       await upgradeToPro(db, fx.orgA);
     }
+  });
+
+  it("stores the product type, defaults to service, and audits changes", async () => {
+    const { productId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "Branding kit",
+      productType: "goods",
+    });
+    const row = await getProduct(db, fx.orgA, productId);
+    expect(row?.productType).toBe("goods");
+
+    // default when unspecified
+    const { productId: serviceId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "Retainer service",
+    });
+    expect((await getProduct(db, fx.orgA, serviceId))?.productType).toBe(
+      "service",
+    );
+
+    // switching type is a plain product.updated, not a price event
+    await updateProduct(db, actorInA(), {
+      ...base,
+      id: productId,
+      version: 1,
+      name: "Branding kit",
+      productType: "service",
+    });
+    expect((await getProduct(db, fx.orgA, productId))?.productType).toBe(
+      "service",
+    );
+  });
+
+  it("lists the org's distinct unit labels, tenant-scoped", async () => {
+    await createProduct(db, actorInA(), {
+      ...base,
+      name: "Hourly consulting",
+      unitLabel: "hour",
+    });
+    await createProduct(db, actorInA(), {
+      ...base,
+      name: "Sprint block",
+      unitLabel: "sprint",
+    });
+    const labels = await listUnitLabels(db, fx.orgA);
+    expect(labels).toContain("hour");
+    expect(labels).toContain("sprint");
+    // org B sees none of org A's vocabulary
+    const foreign = await listUnitLabels(db, fx.orgB);
+    expect(foreign).not.toContain("sprint");
+  });
+
+  it("lists invoice lines that used the product, tenant-scoped", async () => {
+    const { productId } = await createProduct(db, actorInA(), {
+      ...base,
+      name: "Lined product",
+    });
+    // admin fixture rows until the invoice service lands in slice 2
+    const { customers: customersTable, invoices, invoiceLineItems } =
+      await import("@/lib/db/schema");
+    const customerId = newId();
+    await db.insert(customersTable).values({
+      id: customerId,
+      organizationId: fx.orgA,
+      name: "Line fixture customer",
+    });
+    const invoiceId = newId();
+    await db.insert(invoices).values({
+      id: invoiceId,
+      organizationId: fx.orgA,
+      customerId,
+      status: "sent",
+      displayNumber: "INV-100",
+      currency: "KES",
+      totalMinor: 300_000n,
+    });
+    await db.insert(invoiceLineItems).values({
+      id: newId(),
+      organizationId: fx.orgA,
+      invoiceId,
+      productId,
+      description: "Lined product",
+      quantity: "2.000",
+      unitPriceMinor: 150_000n,
+      lineTotalMinor: 300_000n,
+      position: 1,
+    });
+
+    const lines = await getProductTransactions(db, fx.orgA, productId);
+    expect(lines.length).toBe(1);
+    expect(lines[0].displayNumber).toBe("INV-100");
+    expect(lines[0].lineTotalMinor).toBe(300_000n);
+
+    // unreachable through the other tenant's scope
+    expect(await getProductTransactions(db, fx.orgB, productId)).toEqual([]);
   });
 
   it("soft-deletes products, keeping history and audit", async () => {

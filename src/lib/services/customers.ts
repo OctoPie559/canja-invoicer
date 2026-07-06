@@ -1,8 +1,9 @@
-import { and, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   auditLog,
+  customerContacts,
   customers,
   customerVersions,
   emailMessages,
@@ -11,6 +12,8 @@ import {
   user,
 } from "@/lib/db/schema";
 import { Money } from "@/lib/domain/money";
+import { applyContactChanges, insertContact } from "./contacts";
+import type { ContactRowInput } from "@/lib/validation/contacts";
 import { newId } from "@/lib/domain/ids";
 import {
   ConflictError,
@@ -40,12 +43,15 @@ import {
 
 const EDITABLE_FIELDS = [
   "name",
-  "email",
-  "phone",
+  "customerType",
   "addressLine1",
   "addressLine2",
   "city",
   "country",
+  "shippingAddressLine1",
+  "shippingAddressLine2",
+  "shippingCity",
+  "shippingCountry",
   "notes",
   "preferredCurrency",
 ] as const;
@@ -63,10 +69,11 @@ export async function createCustomer(
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "customer.create");
 
+    const { primaryContact, ...fields } = data;
     await tx.insert(customers).values({
       id: customerId,
       organizationId: ctx.organizationId,
-      ...data,
+      ...fields,
     });
     const [row] = await tx
       .select()
@@ -84,8 +91,12 @@ export async function createCustomer(
       action: "customer.created",
       entityType: "customer",
       entityId: customerId,
-      changes: { after: jsonSafe({ ...data }) },
+      changes: { after: jsonSafe({ ...fields }) },
     });
+    // optional inline primary contact — same transaction, own audit row
+    if (primaryContact) {
+      await insertContact(tx, ctx, customerId, primaryContact, true);
+    }
   });
 
   return { customerId };
@@ -95,6 +106,9 @@ export async function updateCustomer(
   db: Database,
   ctx: ActorContext,
   input: UpdateCustomerInput,
+  /** Optional full contact-grid edit, applied in the SAME transaction —
+   *  the edit form saves company + people as one all-or-nothing unit. */
+  contactRows?: ContactRowInput[],
 ): Promise<void> {
   const data = updateCustomerSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("customer.update");
@@ -102,6 +116,10 @@ export async function updateCustomer(
   await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "customer.update");
+
+    if (contactRows) {
+      await applyContactChanges(tx, ctx, data.id, contactRows);
+    }
 
     const [current] = await tx
       .select()
@@ -119,12 +137,15 @@ export async function updateCustomer(
 
     const fields = {
       name: data.name,
-      email: data.email ?? null,
-      phone: data.phone ?? null,
+      customerType: data.customerType,
       addressLine1: data.addressLine1 ?? null,
       addressLine2: data.addressLine2 ?? null,
       city: data.city ?? null,
       country: data.country ?? null,
+      shippingAddressLine1: data.shippingAddressLine1 ?? null,
+      shippingAddressLine2: data.shippingAddressLine2 ?? null,
+      shippingCity: data.shippingCity ?? null,
+      shippingCountry: data.shippingCountry ?? null,
       notes: data.notes ?? null,
       preferredCurrency: data.preferredCurrency ?? null,
     };
@@ -188,6 +209,23 @@ export async function deleteCustomer(
       .update(customers)
       .set({ deletedAt: new Date(), version: nextVersion, updatedAt: new Date() })
       .where(eq(customers.id, data.id));
+    // tombstone the contact persons with their customer (DPA consistency —
+    // person data must not stay live under a deleted company)
+    const tombstoned = await tx
+      .update(customerContacts)
+      .set({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+        version: sql`${customerContacts.version} + 1`,
+      })
+      .where(
+        and(
+          eq(customerContacts.organizationId, ctx.organizationId),
+          eq(customerContacts.customerId, data.id),
+          isNull(customerContacts.deletedAt),
+        ),
+      )
+      .returning({ id: customerContacts.id });
     const [row] = await tx
       .select()
       .from(customers)
@@ -204,7 +242,13 @@ export async function deleteCustomer(
       action: "customer.deleted",
       entityType: "customer",
       entityId: data.id,
-      changes: { before: { deletedAt: null }, after: { deletedAt: row.deletedAt } },
+      changes: {
+        before: { deletedAt: null },
+        after: { deletedAt: row.deletedAt },
+        ...(tombstoned.length > 0
+          ? { contactsRemoved: tombstoned.length }
+          : {}),
+      },
     });
   });
 }
@@ -510,19 +554,36 @@ export async function getCustomerStatement(
   );
 }
 
-/** Emails sent to this customer (Mails tab) — from the outbound email log. */
+/**
+ * Emails sent to this customer (Mails tab) — matched against ALL of the
+ * customer's contact-person emails (contacts own contact info now).
+ */
 export async function getCustomerMails(
   db: Database,
   organizationId: string,
-  customerEmail: string | null,
+  customerId: string,
   limit = 50,
 ) {
-  if (!customerEmail) return [];
+  const contactEmails = await db
+    .select({ email: customerContacts.email })
+    .from(customerContacts)
+    .where(
+      and(
+        eq(customerContacts.organizationId, organizationId),
+        eq(customerContacts.customerId, customerId),
+        isNull(customerContacts.deletedAt),
+      ),
+    );
+  const emails = contactEmails
+    .map((c) => c.email)
+    .filter((e): e is string => Boolean(e));
+  if (emails.length === 0) return [];
   return db
     .select({
       id: emailMessages.id,
       type: emailMessages.type,
       subject: emailMessages.subject,
+      recipient: emailMessages.recipient,
       status: emailMessages.status,
       createdAt: emailMessages.createdAt,
     })
@@ -530,9 +591,50 @@ export async function getCustomerMails(
     .where(
       and(
         eq(emailMessages.organizationId, organizationId),
-        eq(emailMessages.recipient, customerEmail),
+        inArray(emailMessages.recipient, emails),
       ),
     )
     .orderBy(desc(emailMessages.createdAt))
     .limit(limit);
+}
+
+/** Customer list with the primary contact person (list pane display). */
+export async function listCustomersWithPrimaryContact(
+  db: Database,
+  organizationId: string,
+) {
+  const rows = await db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      contactName: customerContacts.firstName,
+      contactLastName: customerContacts.lastName,
+      contactEmail: customerContacts.email,
+    })
+    .from(customers)
+    .leftJoin(
+      customerContacts,
+      and(
+        eq(customerContacts.customerId, customers.id),
+        eq(customerContacts.isPrimary, true),
+        isNull(customerContacts.deletedAt),
+      ),
+    )
+    .where(
+      and(
+        eq(customers.organizationId, organizationId),
+        isNull(customers.deletedAt),
+      ),
+    )
+    .orderBy(customers.name);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    primaryContact: r.contactName
+      ? {
+          name: [r.contactName, r.contactLastName].filter(Boolean).join(" "),
+          email: r.contactEmail,
+        }
+      : null,
+  }));
 }

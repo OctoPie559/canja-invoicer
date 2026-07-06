@@ -3,6 +3,8 @@ import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   auditLog,
+  invoiceLineItems,
+  invoices,
   organizationSettings,
   products,
   productVersions,
@@ -39,6 +41,7 @@ import {
 
 const EDITABLE_FIELDS = [
   "name",
+  "productType",
   "description",
   "unitLabel",
   "unitPriceMinor",
@@ -85,6 +88,7 @@ export async function createProduct(
       id: productId,
       organizationId: ctx.organizationId,
       name: data.name,
+      productType: data.productType,
       description: data.description,
       unitLabel: data.unitLabel,
       unitPriceMinor: price.amountMinor,
@@ -149,6 +153,7 @@ export async function updateProduct(
 
     const next = {
       name: data.name,
+      productType: data.productType,
       description: data.description ?? null,
       unitLabel: data.unitLabel ?? null,
       unitPriceMinor: price.amountMinor,
@@ -248,6 +253,60 @@ export async function deleteProduct(
       changes: { before: { deletedAt: null }, after: { deletedAt: row.deletedAt } },
     });
   });
+}
+
+/**
+ * Invoice lines that used this product (Transactions tab) — real query,
+ * populated once slice 2 starts writing line items.
+ */
+export async function getProductTransactions(
+  db: Database,
+  organizationId: string,
+  productId: string,
+) {
+  return db
+    .select({
+      id: invoiceLineItems.id,
+      invoiceId: invoices.id,
+      displayNumber: invoices.displayNumber,
+      status: invoices.status,
+      issueDate: invoices.issueDate,
+      quantity: invoiceLineItems.quantity,
+      unitPriceMinor: invoiceLineItems.unitPriceMinor,
+      lineTotalMinor: invoiceLineItems.lineTotalMinor,
+      currency: invoices.currency,
+    })
+    .from(invoiceLineItems)
+    .innerJoin(invoices, eq(invoices.id, invoiceLineItems.invoiceId))
+    .where(
+      and(
+        eq(invoiceLineItems.organizationId, organizationId),
+        eq(invoiceLineItems.productId, productId),
+        isNull(invoiceLineItems.deletedAt),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .orderBy(desc(invoices.createdAt));
+}
+
+/** Distinct unit labels already used by the org (unit combobox options). */
+export async function listUnitLabels(
+  db: Database,
+  organizationId: string,
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ unitLabel: products.unitLabel })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        isNull(products.deletedAt),
+      ),
+    );
+  return rows
+    .map((r) => r.unitLabel)
+    .filter((u): u is string => Boolean(u))
+    .sort();
 }
 
 /** Org-scoped reads. */

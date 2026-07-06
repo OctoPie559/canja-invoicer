@@ -43,6 +43,34 @@
       "when": 1783149227834,
       "tag": "0005_comments",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783237412944,
+      "tag": "0006_contact_persons",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783237413910,
+      "tag": "0007_contact_backfill_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783237458764,
+      "tag": "0008_drop_customer_contact_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783330384030,
+      "tag": "0009_product_type",
+      "breakpoints": true
     }
   ]
 }

@@ -1,19 +1,19 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { runWithActor } from "@/lib/audit/context";
 import { getDb } from "@/lib/db/client";
 import { DomainError } from "@/lib/domain/errors";
 import { ZodError } from "zod";
 import {
-  createProduct,
-  deleteProduct,
-  updateProduct,
-} from "@/lib/services/products";
+  createContact,
+  deleteContact,
+  updateContact,
+} from "@/lib/services/contacts";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
-/** Thin wrappers (ARCHITECTURE.md §1.2): auth → ctx → one service → map. */
+/** Thin wrappers (ARCHITECTURE.md §1.2). */
 
 function mapError(error: unknown): ActionState {
   if (error instanceof ZodError) {
@@ -25,74 +25,77 @@ function mapError(error: unknown): ActionState {
   throw error;
 }
 
-function productFields(formData: FormData) {
+function contactFields(formData: FormData) {
   return {
-    name: String(formData.get("name") ?? ""),
-    productType: (formData.get("productType") === "goods"
-      ? "goods"
-      : "service") as "goods" | "service",
-    description: String(formData.get("description") ?? ""),
-    unitLabel: String(formData.get("unitLabel") ?? ""),
-    unitPrice: String(formData.get("unitPrice") ?? ""),
-    currency: String(formData.get("currency") ?? "KES") as never,
-    defaultTaxRateId: null,
+    salutation: String(formData.get("salutation") ?? ""),
+    firstName: String(formData.get("firstName") ?? ""),
+    lastName: String(formData.get("lastName") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    workPhone: String(formData.get("workPhone") ?? ""),
+    mobile: String(formData.get("mobile") ?? ""),
+    designation: String(formData.get("designation") ?? ""),
+    department: String(formData.get("department") ?? ""),
+    isPrimary: formData.get("isPrimary") === "on",
   };
 }
 
-export async function createProductAction(
+export async function createContactAction(
   organizationId: string,
+  customerId: string,
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
-  let productId: string;
   try {
-    const result = await runWithActor(ctx, () =>
-      createProduct(getDb(), ctx, productFields(formData)),
+    await runWithActor(ctx, () =>
+      createContact(getDb(), ctx, { customerId, ...contactFields(formData) }),
     );
-    productId = result.productId;
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/products/${productId}`);
+  revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);
+  return { error: null };
 }
 
-export async function updateProductAction(
+export async function updateContactAction(
   organizationId: string,
+  customerId: string,
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
-  const id = String(formData.get("id") ?? "");
   try {
     await runWithActor(ctx, () =>
-      updateProduct(getDb(), ctx, {
-        id,
+      updateContact(getDb(), ctx, {
+        id: String(formData.get("id") ?? ""),
         version: Number(formData.get("version") ?? 0),
-        ...productFields(formData),
+        ...contactFields(formData),
       }),
     );
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/products/${id}`);
+  revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);
+  return { error: null };
 }
 
-export async function deleteProductAction(
+export async function deleteContactAction(
   organizationId: string,
-  productId: string,
+  customerId: string,
+  contactId: string,
   version: number,
 ): Promise<ActionState> {
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
   try {
     await runWithActor(ctx, () =>
-      deleteProduct(getDb(), ctx, { id: productId, version }),
+      deleteContact(getDb(), ctx, { id: contactId, version }),
     );
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/products`);
+  revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);
+  return { error: null };
 }

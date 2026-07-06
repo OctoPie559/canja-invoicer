@@ -47,7 +47,11 @@ describe("customer workspace (comments, receivables, statement)", () => {
     await upgradeToPro(db, fx.orgA);
     ({ customerId } = await createCustomer(db, actorInA(), {
       name: "Njogu-ini Career Association",
-      email: "info@njogu-ini.example",
+      primaryContact: {
+        firstName: "Mirriam",
+        lastName: "Githinji",
+        email: "info@njogu-ini.example",
+      },
     }));
     viewer = await seedUser(db, "viewer");
     const { invitationId } = await inviteMember(db, actorInA(), {

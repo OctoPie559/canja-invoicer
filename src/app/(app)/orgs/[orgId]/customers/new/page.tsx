@@ -24,7 +24,7 @@ export default async function NewCustomerPage({
         <CardTitle className="font-heading text-lg">New customer</CardTitle>
       </CardHeader>
       <CardContent>
-        <CustomerForm organizationId={orgId} />
+        <CustomerForm organizationId={orgId} cancelHref={`/orgs/${orgId}/customers`} />
       </CardContent>
     </Card>
   );

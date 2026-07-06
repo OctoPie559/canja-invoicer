@@ -5,6 +5,7 @@ import { SUPPORTED_CURRENCIES } from "./currencies";
 
 const productFields = {
   name: z.string().trim().min(2).max(160),
+  productType: z.enum(["goods", "service"]).default("service"),
   description: z
     .string()
     .trim()

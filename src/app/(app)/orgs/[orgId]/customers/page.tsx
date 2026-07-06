@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
-import { listCustomers } from "@/lib/services/customers";
+import { listCustomersWithPrimaryContact } from "@/lib/services/customers";
 import { requireMembership } from "@/lib/transport/org";
 import { CustomerListPane } from "@/components/customer-list-pane";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,7 +22,7 @@ export default async function CustomersIndexPage({
   const { orgId } = await params;
   const { list } = await searchParams;
   const { role } = await requireMembership(orgId);
-  const customers = await listCustomers(getDb(), orgId);
+  const customers = await listCustomersWithPrimaryContact(getDb(), orgId);
 
   if (customers.length > 0 && list !== "1") {
     redirect(`/orgs/${orgId}/customers/${customers[0].id}`);
@@ -34,11 +34,7 @@ export default async function CustomersIndexPage({
       <Card className="overflow-hidden py-0 lg:hidden">
         <CustomerListPane
           organizationId={orgId}
-          customers={customers.map((c) => ({
-            id: c.id,
-            name: c.name,
-            email: c.email,
-          }))}
+          customers={customers}
           canCreate={can(role, "customer.create")}
         />
       </Card>
