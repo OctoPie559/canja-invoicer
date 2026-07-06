@@ -11,6 +11,10 @@ import {
 } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
 import { getEmailSender } from "@/lib/email/port";
+import {
+  passwordResetEmail,
+  verificationEmail,
+} from "@/lib/email/templates";
 
 /**
  * Better Auth handles AUTHENTICATION only: users, sessions, credentials,
@@ -40,8 +44,7 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user: u, url }) => {
       await getEmailSender().send({
         to: u.email,
-        subject: "Reset your invoicer password",
-        text: `Hi ${u.name},\n\nReset your password: ${url}\n\nIf you did not request this, ignore this email.`,
+        ...(await passwordResetEmail({ url })),
       });
     },
     // brief §6: sessions are revoked on password change
@@ -53,8 +56,7 @@ export const auth = betterAuth({
     sendVerificationEmail: async ({ user: u, url }) => {
       await getEmailSender().send({
         to: u.email,
-        subject: "Verify your invoicer email",
-        text: `Hi ${u.name},\n\nVerify your email to enable sending invoices: ${url}`,
+        ...(await verificationEmail({ name: u.name, url })),
       });
     },
   },

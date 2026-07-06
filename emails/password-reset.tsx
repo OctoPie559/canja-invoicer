@@ -13,20 +13,17 @@ import { EmailFooter, EmailLogo } from './components';
 import { EmailFonts } from './fonts';
 import { emailTheme } from './theme';
 
-interface VerificationEmailProps {
-  /** Recipient's name, for the greeting. */
-  name: string;
-  /** Verification link. */
+interface PasswordResetEmailProps {
+  /** Reset link. */
   url: string;
-  /** Absolute origin for hosted images (email clients need full URLs). */
+  /** Absolute origin for hosted images. */
   baseUrl: string;
 }
 
-export const VerificationEmail = ({
-  name,
+export const PasswordResetEmail = ({
   url,
   baseUrl,
-}: VerificationEmailProps) => (
+}: PasswordResetEmailProps) => (
   <Tailwind config={emailTheme}>
     <Html>
       <Head>
@@ -34,23 +31,22 @@ export const VerificationEmail = ({
       </Head>
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-        <Preview>Confirm your email to start sending invoices</Preview>
+        <Preview>Reset your invoicer password</Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
-          <Section className="shadow-collage-card rounded-[8px]">
+          <Section className="rounded-[8px] shadow-collage-card">
             <Section className="bg-bg border-stroke rounded-[8px] border">
               <EmailLogo baseUrl={baseUrl} />
 
               <Section className="mobile:px-6! px-10 pt-8">
                 <Section className="mb-9">
                   <Text className="font-48 text-fg m-0 font-sans">
-                    Almost there
+                    Reset your password
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                    Hi {name}, welcome to invoicer.
-                  </Text>
-                  <Text className="font-14 font-inter text-fg-2 m-0">
-                    Confirm your email address to unlock sending invoices —
-                    everything else is ready when you are.
+                    Someone requested a password reset for your invoicer
+                    account. Use the button below to choose a new one — for
+                    your security, all sessions are signed out after the
+                    reset.
                   </Text>
                 </Section>
 
@@ -58,14 +54,15 @@ export const VerificationEmail = ({
                   href={url}
                   className="bg-brand font-15 font-inter text-fg-inverted inline-block border-none px-5 py-3.5 text-center"
                 >
-                  Confirm email
+                  Change password
                 </Button>
               </Section>
 
               <Section className="mobile:px-6! px-10 pt-16 pb-8">
                 <Text className="font-11 font-inter text-fg-3 m-0 max-w-[310px]">
-                  If you didn&apos;t create an invoicer account, you can safely
-                  ignore this email.
+                  If you didn&apos;t request this, you can ignore this email.
+                  Your password won&apos;t change until you open the link
+                  above and create a new one.
                 </Text>
               </Section>
 
@@ -78,10 +75,9 @@ export const VerificationEmail = ({
   </Tailwind>
 );
 
-VerificationEmail.PreviewProps = {
-  name: 'Erick',
-  url: 'https://example.com/verify',
+PasswordResetEmail.PreviewProps = {
+  url: 'https://example.com/reset',
   baseUrl: '',
-} satisfies VerificationEmailProps;
+} satisfies PasswordResetEmailProps;
 
-export default VerificationEmail;
+export default PasswordResetEmail;

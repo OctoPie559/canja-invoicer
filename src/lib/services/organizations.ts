@@ -140,10 +140,30 @@ export async function createOrganization(
   return { organizationId };
 }
 
+/** Renders the invitation email body; the transport injects the HTML one. */
+export type InvitationRenderer = (params: {
+  inviterName: string;
+  organizationName: string;
+  role: string;
+  url: string;
+}) => Promise<{ subject: string; html?: string; text: string }>;
+
+/** Framework-free default so the pure service never imports a JSX template. */
+const plainInvitation: InvitationRenderer = async ({
+  inviterName,
+  organizationName,
+  role,
+  url,
+}) => ({
+  subject: `You've been invited to ${organizationName} on invoicer`,
+  text: `${inviterName} has invited you to join ${organizationName} as ${role}.\n\nAccept: ${url}`,
+});
+
 /** Side-effect ports, injectable for tests; defaults resolve the real ones. */
 export interface InviteDeps {
   emailSender?: EmailSender;
   baseUrl?: string;
+  renderInvitation?: InvitationRenderer;
 }
 
 export async function inviteMember(
@@ -157,10 +177,14 @@ export async function inviteMember(
 
   const emailSender = deps.emailSender ?? getEmailSender();
   const baseUrl = deps.baseUrl ?? appBaseUrl();
+  // Default is a framework-free plain-text renderer so the service layer
+  // never imports JSX. The transport layer injects the rich HTML template
+  // (see app/actions/organizations.ts).
+  const renderInvitation = deps.renderInvitation ?? plainInvitation;
   const invitationId = newId();
   const invitedEmail = data.email;
 
-  const orgName = await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+  const invite = await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "member.invite");
 
@@ -257,16 +281,26 @@ export async function inviteMember(
       .from(organization)
       .where(eq(organization.id, ctx.organizationId))
       .limit(1);
-    return org?.name ?? "an organization";
+    const [inviter] = await tx
+      .select({ name: user.name })
+      .from(user)
+      .where(eq(user.id, ctx.actorId!))
+      .limit(1);
+    return {
+      orgName: org?.name ?? "an organization",
+      inviterName: inviter?.name ?? "A teammate",
+    };
   });
 
   // side effect after commit — an email must never fire for a rolled-back invite
+  const message = await renderInvitation({
+    inviterName: invite.inviterName,
+    organizationName: invite.orgName,
+    role: data.role,
+    url: `${baseUrl}/invitations/${invitationId}`,
+  });
   const result = await emailSender
-    .send({
-      to: invitedEmail,
-      subject: `You've been invited to ${orgName} on invoicer`,
-      text: `You have been invited to join ${orgName} as ${data.role}.\n\nAccept: ${baseUrl}/invitations/${invitationId}`,
-    })
+    .send({ to: invitedEmail, ...message })
     .catch(() => ({ providerMessageId: null }));
   await db
     .update(emailMessages)
