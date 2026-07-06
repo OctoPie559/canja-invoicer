@@ -19,6 +19,9 @@ export const products = pgTable(
       .notNull()
       .references(() => organization.id),
     name: text("name").notNull(),
+    // a catalog item is a good or a service (brief §8 glossary); services
+    // are the default for our freelancer-first market
+    productType: text("product_type").notNull().default("service"),
     description: text("description"),
     unitLabel: text("unit_label"),
     unitPriceMinor: moneyMinor("unit_price_minor"),

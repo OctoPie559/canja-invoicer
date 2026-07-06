@@ -1,49 +1,30 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
+import { AlertTriangle, Banknote, FileText, Wallet } from "lucide-react";
 import { getDb } from "@/lib/db/client";
-import { auditLog, invitation, member, user } from "@/lib/db/schema";
-import { organization } from "@/lib/db/schema";
-import { can, isRole } from "@/lib/authz/permissions";
-import { requireSession } from "@/lib/transport/session";
-import { InviteMemberForm } from "@/components/forms";
-import { revokeInvitationAction } from "@/app/actions/organizations";
+import { auditLog, organization } from "@/lib/db/schema";
+import { getFinancialOverview } from "@/lib/services/reporting";
+import { requireMembership } from "@/lib/transport/org";
+import { ActivityTimeline } from "@/components/activity-timeline";
+import { formatMoneyCompact, StatTile } from "@/components/stat-tile";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-/**
- * Reads may bypass services but never tenancy (ARCHITECTURE.md §1.1): the
- * membership check gates the page, and every query filters by org id.
- */
-export default async function OrgPage({
+/** Org overview = the finances at a glance. Management lives in Settings. */
+export default async function OrgOverviewPage({
   params,
 }: {
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  const session = await requireSession();
+  const { role } = await requireMembership(orgId);
   const db = getDb();
-
-  const [membership] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(and(eq(member.organizationId, orgId), eq(member.userId, session.user.id)))
-    .limit(1);
-  if (!membership || !isRole(membership.role)) notFound();
-  const role = membership.role;
 
   const [org] = await db
     .select({ name: organization.name })
@@ -52,31 +33,23 @@ export default async function OrgPage({
     .limit(1);
   if (!org) notFound();
 
-  const members = await db
-    .select({ id: member.id, role: member.role, name: user.name, email: user.email })
-    .from(member)
-    .innerJoin(user, eq(user.id, member.userId))
-    .where(eq(member.organizationId, orgId));
-
-  const pendingInvitations = await db
-    .select({ id: invitation.id, email: invitation.email, role: invitation.role })
-    .from(invitation)
-    .where(and(eq(invitation.organizationId, orgId), eq(invitation.status, "pending")));
-
-  const timeline = await db
-    .select({
-      id: auditLog.id,
-      action: auditLog.action,
-      actorType: auditLog.actorType,
-      createdAt: auditLog.createdAt,
-    })
-    .from(auditLog)
-    .where(eq(auditLog.organizationId, orgId))
-    .orderBy(desc(auditLog.createdAt))
-    .limit(20);
+  const [overview, timeline] = await Promise.all([
+    getFinancialOverview(db, orgId),
+    db
+      .select({
+        id: auditLog.id,
+        action: auditLog.action,
+        actorType: auditLog.actorType,
+        createdAt: auditLog.createdAt,
+      })
+      .from(auditLog)
+      .where(eq(auditLog.organizationId, orgId))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(10),
+  ]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex items-baseline justify-between">
         <h1 className="font-heading text-xl font-semibold text-foreground">
           {org.name}
@@ -86,92 +59,52 @@ export default async function OrgPage({
         </span>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-base">Members</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead className="text-right">Role</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell className="font-medium">{m.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.email}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge variant="secondary">{m.role}</Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {pendingInvitations.length > 0 && (
-            <>
-              <h3 className="mt-6 mb-2 text-sm font-medium text-foreground">
-                Pending invitations
-              </h3>
-              <ul className="divide-y text-sm">
-                {pendingInvitations.map((inv) => (
-                  <li
-                    key={inv.id}
-                    className="flex items-center justify-between py-2"
-                  >
-                    <span className="flex items-center gap-2">
-                      {inv.email}
-                      <Badge variant="outline">{inv.role}</Badge>
-                    </span>
-                    {can(role, "member.invite") && (
-                      <form
-                        action={revokeInvitationAction.bind(null, orgId, inv.id)}
-                      >
-                        <Button variant="destructive" size="xs" type="submit">
-                          Revoke
-                        </Button>
-                      </form>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {can(role, "member.invite") && (
-            <div className="mt-6 border-t pt-4">
-              <InviteMemberForm organizationId={orgId} />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {overview.unconvertibleCount > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertDescription>
+            {overview.unconvertibleCount} foreign-currency invoice(s) have no
+            exchange-rate snapshot and are excluded from these totals.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile
+          label="Outstanding"
+          value={formatMoneyCompact(overview.outstanding)}
+          context={`${overview.openInvoiceCount} open invoice${overview.openInvoiceCount === 1 ? "" : "s"}`}
+          icon={Wallet}
+        />
+        <StatTile
+          label="Overdue"
+          value={formatMoneyCompact(overview.overdue)}
+          context={`${overview.overdueCount} invoice${overview.overdueCount === 1 ? "" : "s"} past due`}
+          icon={AlertTriangle}
+          emphasis={overview.overdueCount > 0 ? "serious" : "none"}
+        />
+        <StatTile
+          label="Collected"
+          value={formatMoneyCompact(overview.collected)}
+          context="all time"
+          icon={Banknote}
+        />
+        <StatTile
+          label="Drafts"
+          value={String(overview.draftCount)}
+          context={`${overview.customerCount} customer${overview.customerCount === 1 ? "" : "s"} · ${overview.productCount} product${overview.productCount === 1 ? "" : "s"}`}
+          icon={FileText}
+        />
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="font-heading text-base">Activity</CardTitle>
+          <CardTitle className="font-heading text-base">
+            Recent activity
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {timeline.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No activity yet.</p>
-          ) : (
-            <ul className="divide-y text-sm">
-              {timeline.map((entry) => (
-                <li key={entry.id} className="flex justify-between py-2">
-                  <span className="font-mono text-foreground">
-                    {entry.action}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {entry.actorType} ·{" "}
-                    {entry.createdAt.toISOString().slice(0, 16).replace("T", " ")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ActivityTimeline entries={timeline} />
         </CardContent>
       </Card>
     </div>

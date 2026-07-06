@@ -88,7 +88,7 @@ export function InviteMemberForm({
       <div className="space-y-2">
         <Label htmlFor="invite-role">Role</Label>
         <Select name="role" defaultValue="member">
-          <SelectTrigger id="invite-role" className="w-32">
+          <SelectTrigger id="invite-role" className="w-32 mb-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
