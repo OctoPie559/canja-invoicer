@@ -1,5 +1,5 @@
 import { render } from "@react-email/render";
-import { appBaseUrl } from "@/lib/config";
+import { emailAssetBaseUrl } from "@/lib/config";
 import { InvitationEmail } from "../../../emails/invitation";
 import { PasswordResetEmail } from "../../../emails/password-reset";
 import { VerificationEmail } from "../../../emails/verification";
@@ -9,6 +9,11 @@ import type { EmailMessage } from "./port";
  * Renders react-email templates (emails/) into ready-to-send messages —
  * HTML plus a plain-text fallback derived from the same markup, so copy
  * never drifts between the two.
+ *
+ * Images are HOSTED, not attached: templates reference
+ * `${emailAssetBaseUrl()}/static/...`, served from public/static/. Changing
+ * an image is just replacing the file there. The base URL must be publicly
+ * reachable (see emailAssetBaseUrl) or email clients can't fetch it.
  */
 
 type RenderedEmail = Omit<EmailMessage, "to">;
@@ -32,7 +37,7 @@ export async function verificationEmail(params: {
     <VerificationEmail
       name={params.name}
       url={params.url}
-      baseUrl={appBaseUrl()}
+      baseUrl={emailAssetBaseUrl()}
     />,
   );
   return { subject: "Confirm your invoicer email", ...body };
@@ -42,7 +47,7 @@ export async function passwordResetEmail(params: {
   url: string;
 }): Promise<RenderedEmail> {
   const body = await renderBoth(
-    <PasswordResetEmail url={params.url} baseUrl={appBaseUrl()} />,
+    <PasswordResetEmail url={params.url} baseUrl={emailAssetBaseUrl()} />,
   );
   return { subject: "Reset your invoicer password", ...body };
 }
@@ -59,7 +64,7 @@ export async function invitationEmail(params: {
       organizationName={params.organizationName}
       role={params.role}
       url={params.url}
-      baseUrl={appBaseUrl()}
+      baseUrl={emailAssetBaseUrl()}
     />,
   );
   return {
