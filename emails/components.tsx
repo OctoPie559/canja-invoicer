@@ -13,10 +13,11 @@ export function EmailLogo({ baseUrl }: { baseUrl: string }) {
   return (
     <Section className="mobile:px-6! px-10 pt-16">
       <Img
-        // `/static/color-logo.png` resolves in BOTH contexts: the react-email
-        // preview server serves emails/static/ there, and our Next app serves
-        // public/static/ there. baseUrl is an absolute origin in real sends
-        // (appBaseUrl) so email clients can fetch it.
+        // Hosted image: the file lives in public/static/ (and emails/static/
+        // for the react-email preview server). To change the logo, replace
+        // that file. baseUrl must be a PUBLICLY reachable origin in real
+        // sends (emailAssetBaseUrl) — email clients fetch images through
+        // their own proxies, which can never reach localhost.
         src={`${baseUrl}/static/color-logo.png`}
         alt="invoicer"
         width={148}

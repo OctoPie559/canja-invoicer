@@ -11,6 +11,8 @@
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
 import { PasswordResetEmail } from "../emails/password-reset";
+import { SubscriptionConfirmation } from "../emails/subscription-confirmation";
+import { SubscriptionUpdate } from "../emails/subscription-update";
 import { VerificationEmail } from "../emails/verification";
 
 let failed = false;
@@ -48,6 +50,20 @@ async function main() {
     "static/color-logo.png",
   ]);
 
+  // send path: with a real base URL the logo must be an absolute hosted URL
+  // (email clients fetch images through their own proxies — relative paths
+  // and localhost never resolve there)
+  const vHosted = await renderBoth(
+    <VerificationEmail
+      name="Erick"
+      url="https://app.example/verify"
+      baseUrl="https://assets.example"
+    />,
+  );
+  assert("verification (hosted logo)", vHosted.html, vHosted.text, [
+    'src="https://assets.example/static/color-logo.png"',
+  ]);
+
   const p = await renderBoth(
     <PasswordResetEmail url="https://app.example/reset" baseUrl="" />,
   );
@@ -70,6 +86,48 @@ async function main() {
     "Erick Ngure",
     "Njogu-ini Career Association",
     "member",
+    "static/color-logo.png",
+  ]);
+
+  // slice-8 billing templates: rebranded and render-checked now, wired to
+  // send functions when Paystack billing lands
+  const sc = await renderBoth(
+    <SubscriptionConfirmation
+      userName="Erick"
+      planName="Pro"
+      planPrice="KES 1,500"
+      cycleLabel="month"
+      nextBillingDate="6 August 2026"
+      subtotal="KES 1,293.10"
+      tax="KES 206.90"
+      total="KES 1,500.00"
+      url="https://app.example/billing"
+      baseUrl=""
+    />,
+  );
+  assert("subscription confirmation", sc.html, sc.text, [
+    "Erick",
+    "Pro",
+    "KES 1,500",
+    "Subscription confirmed",
+    "static/color-logo.png",
+  ]);
+
+  const su = await renderBoth(
+    <SubscriptionUpdate
+      userName="Erick"
+      planName="Pro"
+      planPrice="KES 1,500"
+      cycleLabel="month"
+      nextBillingDate="6 August 2026"
+      url="https://app.example/billing"
+      baseUrl=""
+    />,
+  );
+  assert("subscription update", su.html, su.text, [
+    "Erick",
+    "Pro",
+    "Plan renewed",
     "static/color-logo.png",
   ]);
 
