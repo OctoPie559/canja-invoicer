@@ -1,213 +1,117 @@
-// Get the full source code, including the theme and Tailwind config:
-// https://github.com/resend/react-email/tree/canary/apps/demo/emails
-
 import {
   Body,
   Button,
-  Column,
   Container,
   Head,
   Html,
-  Img,
-  Link,
   Preview,
-  Row,
   Section,
   Tailwind,
   Text,
 } from 'react-email';
+import { EmailFooter, EmailLogo } from './components';
 import { EmailFonts } from './fonts';
 import { emailTheme } from './theme';
 
-const baseUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : '';
+/**
+ * Sent when an invoicer subscription renews or changes (slice 8 — billing).
+ * Not wired to a send function yet; the template ships rebranded and ready
+ * so wiring is a one-liner when Paystack billing lands.
+ */
 
 interface SubscriptionUpdateProps {
-  companyName: string;
-  url: string;
+  /** Recipient's name, for the greeting. */
   userName: string;
+  /** Plan display name, e.g. "Pro". */
   planName: string;
+  /** Formatted recurring price, e.g. "KES 1,500". */
   planPrice: string;
+  /** Billing cycle label, e.g. "month". */
   cycleLabel: string;
+  /** Formatted date of the next charge. */
   nextBillingDate: string;
+  /** Manage-subscription link. */
+  url: string;
+  /** Absolute origin for hosted images. */
+  baseUrl: string;
+  /** Overrides the logo image source (real sends use a `cid:` attachment). */
+  logoSrc?: string;
 }
 
 export const SubscriptionUpdate = ({
-  companyName,
-  url,
   userName,
   planName,
   planPrice,
   cycleLabel,
   nextBillingDate,
-}: SubscriptionUpdateProps) => {
-  return (
-    <Tailwind config={emailTheme}>
-      <Html>
-        <Head>
-          <EmailFonts />
-        </Head>
+  url,
+  baseUrl,
+  logoSrc,
+}: SubscriptionUpdateProps) => (
+  <Tailwind config={emailTheme}>
+    <Html>
+      <Head>
+        <EmailFonts />
+      </Head>
 
-        <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-          <Preview>
-            Your {companyName} plan renewed ({planName})
-          </Preview>
-          <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
-            <Section className="rounded-[8px] shadow-collage-card">
-              <Section className="bg-bg border-stroke rounded-[8px] border">
-                <Section className="mobile:px-6! px-10 pt-16">
-                  <Img
-                    src={`${baseUrl}/static/color-logo.png`}
-                    alt=""
-                    width={148}
-                    height={111}
-                    className="block border-none"
-                  />
-                </Section>
+      <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
+        <Preview>Your invoicer {planName} plan renewed</Preview>
+        <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
+          <Section className="shadow-collage-card rounded-[8px]">
+            <Section className="bg-bg border-stroke rounded-[8px] border">
+              <EmailLogo baseUrl={baseUrl} src={logoSrc} />
 
-                <Section className="mobile:px-6! px-10 pb-14 pt-8">
-                  <Section
-                    align="left"
-                    className="mb-12 ml-0 mr-auto w-full max-w-[480px] text-left"
-                  >
-                    <Text className="font-48 text-fg m-0 font-sans">
-                      Plan renewed
-                    </Text>
-                    <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                      Hi {userName}. Your {companyName} subscription renewed for
-                      another {cycleLabel}. Here&apos;s a quick summary of your
-                      plan and billing.
-                    </Text>
-                    <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                      You&apos;re on the {planName} plan at {planPrice} per{' '}
-                      {cycleLabel}. Your next charge is on {nextBillingDate}.
-                      Review invoices, update payment details, or change plans
-                      anytime in your account.
-                    </Text>
-                    <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                      Something look off? Reply to this email and we&apos;ll
-                      help sort it out.
-                    </Text>
-                  </Section>
-
-                  <Button
-                    href={url}
-                    className="bg-brand font-15 font-inter text-fg-inverted inline-block border-none px-5 py-3.5 text-center"
-                  >
-                    Manage subscription
-                  </Button>
-                </Section>
-
-                <Section className="border-stroke border-t px-10 py-16">
-                  <Text className="font-13 font-inter text-fg-3 m-0 max-w-[320px]">
-                    Collage is the workspace where your team keeps projects,
-                    context, and updates together—from first idea to launch.
+              <Section className="mobile:px-6! px-10 pt-8">
+                <Section className="mb-9">
+                  <Text className="font-48 text-fg m-0 font-sans">
+                    Plan renewed
                   </Text>
-
-                  <Row align="left">
-                    <Column className="w-full align-top">
-                      <Section align="left" className="mt-8 w-[152px]">
-                        <Row align="left">
-                          <Column className="w-[20px] pr-8">
-                            <Link
-                              href="https://example.com/"
-                              className="inline-block"
-                            >
-                              <Img
-                                src={`${baseUrl}/static/shared/social-x-black.png`}
-                                alt="X"
-                                width={20}
-                                height={20}
-                                className="block border-none"
-                              />
-                            </Link>
-                          </Column>
-                          <Column className="w-[20px] pr-8">
-                            <Link
-                              href="https://example.com/"
-                              className="inline-block"
-                            >
-                              <Img
-                                src={`${baseUrl}/static/shared/social-in-black.png`}
-                                alt="LinkedIn"
-                                width={20}
-                                height={20}
-                                className="block border-none"
-                              />
-                            </Link>
-                          </Column>
-                          <Column className="w-[20px] pr-8">
-                            <Link
-                              href="https://example.com/"
-                              className="inline-block"
-                            >
-                              <Img
-                                src={`${baseUrl}/static/shared/social-yt-black.png`}
-                                alt="YouTube"
-                                width={20}
-                                height={20}
-                                className="block border-none"
-                              />
-                            </Link>
-                          </Column>
-                          <Column className="w-[20px]">
-                            <Link
-                              href="https://example.com/"
-                              className="inline-block"
-                            >
-                              <Img
-                                src={`${baseUrl}/static/shared/social-gh-black.png`}
-                                alt="GitHub"
-                                width={20}
-                                height={20}
-                                className="block border-none"
-                              />
-                            </Link>
-                          </Column>
-                        </Row>
-                      </Section>
-                    </Column>
-                  </Row>
-
-                  <Row align="left">
-                    <Column className="w-full pt-8 align-top">
-                      <Text className="font-11 font-inter text-fg-2 m-0">
-                        123 Market Street, Floor 1
-                        <br />
-                        Tech City, CA, 94102
-                      </Text>
-                    </Column>
-                  </Row>
-
-                  <Row align="left">
-                    <Column className="w-full pt-5 align-top">
-                      <Text className="font-11 font-inter text-fg-2 m-0 max-w-[169px]">
-                        <Link href="https://example.com/" className="text-fg-2">
-                          Unsubscribe
-                        </Link>{' '}
-                        from {companyName} marketing emails.
-                      </Text>
-                    </Column>
-                  </Row>
+                  <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
+                    Hi {userName}. Your invoicer subscription renewed for
+                    another {cycleLabel}. Here&apos;s a quick summary of your
+                    plan and billing.
+                  </Text>
+                  <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
+                    You&apos;re on the <strong>{planName}</strong> plan at{' '}
+                    {planPrice} per {cycleLabel}. Your next charge is on{' '}
+                    {nextBillingDate}. Review invoices, update payment
+                    details, or change plans anytime from your billing
+                    settings.
+                  </Text>
                 </Section>
+
+                <Button
+                  href={url}
+                  className="bg-brand font-15 font-inter text-fg-inverted inline-block border-none px-5 py-3.5 text-center"
+                >
+                  Manage subscription
+                </Button>
               </Section>
+
+              <Section className="mobile:px-6! px-10 pt-16 pb-8">
+                <Text className="font-11 font-inter text-fg-3 m-0 max-w-[310px]">
+                  Something look off? Reply to this email and we&apos;ll help
+                  sort it out.
+                </Text>
+              </Section>
+
+              <EmailFooter />
             </Section>
-          </Container>
-        </Body>
-      </Html>
-    </Tailwind>
-  );
-};
+          </Section>
+        </Container>
+      </Body>
+    </Html>
+  </Tailwind>
+);
 
 SubscriptionUpdate.PreviewProps = {
-  companyName: 'Collage',
-  url: 'https://example.com/',
-  userName: 'Alex',
+  userName: 'Erick',
   planName: 'Pro',
-  planPrice: '$29',
+  planPrice: 'KES 1,500',
   cycleLabel: 'month',
-  nextBillingDate: 'April 22, 2026',
+  nextBillingDate: '6 August 2026',
+  url: 'https://example.com/billing',
+  baseUrl: '',
 } satisfies SubscriptionUpdateProps;
 
 export default SubscriptionUpdate;

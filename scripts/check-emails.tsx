@@ -11,6 +11,8 @@
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
 import { PasswordResetEmail } from "../emails/password-reset";
+import { SubscriptionConfirmation } from "../emails/subscription-confirmation";
+import { SubscriptionUpdate } from "../emails/subscription-update";
 import { VerificationEmail } from "../emails/verification";
 
 let failed = false;
@@ -48,6 +50,24 @@ async function main() {
     "static/color-logo.png",
   ]);
 
+  // send path: templates.tsx passes a cid: source so the logo ships as an
+  // inline attachment instead of depending on a publicly hosted URL
+  const vCid = await renderBoth(
+    <VerificationEmail
+      name="Erick"
+      url="https://app.example/verify"
+      baseUrl="http://localhost:3000"
+      logoSrc="cid:invoicer-logo"
+    />,
+  );
+  assert("verification (cid logo)", vCid.html, vCid.text, [
+    'src="cid:invoicer-logo"',
+  ]);
+  if (vCid.html.includes("localhost:3000/static/color-logo.png")) {
+    failed = true;
+    console.log("   FAIL cid render still references the hosted logo URL");
+  }
+
   const p = await renderBoth(
     <PasswordResetEmail url="https://app.example/reset" baseUrl="" />,
   );
@@ -70,6 +90,48 @@ async function main() {
     "Erick Ngure",
     "Njogu-ini Career Association",
     "member",
+    "static/color-logo.png",
+  ]);
+
+  // slice-8 billing templates: rebranded and render-checked now, wired to
+  // send functions when Paystack billing lands
+  const sc = await renderBoth(
+    <SubscriptionConfirmation
+      userName="Erick"
+      planName="Pro"
+      planPrice="KES 1,500"
+      cycleLabel="month"
+      nextBillingDate="6 August 2026"
+      subtotal="KES 1,293.10"
+      tax="KES 206.90"
+      total="KES 1,500.00"
+      url="https://app.example/billing"
+      baseUrl=""
+    />,
+  );
+  assert("subscription confirmation", sc.html, sc.text, [
+    "Erick",
+    "Pro",
+    "KES 1,500",
+    "Subscription confirmed",
+    "static/color-logo.png",
+  ]);
+
+  const su = await renderBoth(
+    <SubscriptionUpdate
+      userName="Erick"
+      planName="Pro"
+      planPrice="KES 1,500"
+      cycleLabel="month"
+      nextBillingDate="6 August 2026"
+      url="https://app.example/billing"
+      baseUrl=""
+    />,
+  );
+  assert("subscription update", su.html, su.text, [
+    "Erick",
+    "Pro",
+    "Plan renewed",
     "static/color-logo.png",
   ]);
 

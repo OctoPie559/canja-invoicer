@@ -24,6 +24,8 @@ interface InvitationEmailProps {
   url: string;
   /** Absolute origin for hosted images. */
   baseUrl: string;
+  /** Overrides the logo image source (real sends use a `cid:` attachment). */
+  logoSrc?: string;
 }
 
 export const InvitationEmail = ({
@@ -32,6 +34,7 @@ export const InvitationEmail = ({
   role,
   url,
   baseUrl,
+  logoSrc,
 }: InvitationEmailProps) => (
   <Tailwind config={emailTheme}>
     <Html>
@@ -46,7 +49,7 @@ export const InvitationEmail = ({
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
             <Section className="bg-bg border-stroke rounded-[8px] border">
-              <EmailLogo baseUrl={baseUrl} />
+              <EmailLogo baseUrl={baseUrl} src={logoSrc} />
 
               <Section className="mobile:px-6! px-10 pt-8">
                 <Section className="mb-9">
