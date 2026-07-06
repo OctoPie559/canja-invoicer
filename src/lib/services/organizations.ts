@@ -29,11 +29,7 @@ import {
   type CreateOrganizationInput,
   type InviteMemberInput,
 } from "@/lib/validation/organizations";
-import {
-  getEmailSender,
-  type EmailAttachment,
-  type EmailSender,
-} from "@/lib/email/port";
+import { getEmailSender, type EmailSender } from "@/lib/email/port";
 import { appBaseUrl } from "@/lib/config";
 
 /**
@@ -150,12 +146,7 @@ export type InvitationRenderer = (params: {
   organizationName: string;
   role: string;
   url: string;
-}) => Promise<{
-  subject: string;
-  html?: string;
-  text: string;
-  attachments?: EmailAttachment[];
-}>;
+}) => Promise<{ subject: string; html?: string; text: string }>;
 
 /** Framework-free default so the pure service never imports a JSX template. */
 const plainInvitation: InvitationRenderer = async ({

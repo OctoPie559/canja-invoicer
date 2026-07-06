@@ -9,24 +9,16 @@ import { Img, Section, Text } from 'react-email';
 export const BRAND_BLURB =
   'invoicer helps Kenyan freelancers and small teams send professional invoices, get paid the way their clients actually pay, and keep a trustworthy record of every shilling.';
 
-export function EmailLogo({
-  baseUrl,
-  src,
-}: {
-  baseUrl: string;
-  /**
-   * Real sends pass `cid:<id>` here (the logo ships as an inline attachment,
-   * see src/lib/email/templates.tsx) so it renders even when the app's base
-   * URL is not publicly reachable. The preview default resolves in both dev
-   * contexts: the react-email preview server serves emails/static/ at
-   * /static/ and our Next app serves public/static/ there.
-   */
-  src?: string;
-}) {
+export function EmailLogo({ baseUrl }: { baseUrl: string }) {
   return (
     <Section className="mobile:px-6! px-10 pt-16">
       <Img
-        src={src ?? `${baseUrl}/static/color-logo.png`}
+        // Hosted image: the file lives in public/static/ (and emails/static/
+        // for the react-email preview server). To change the logo, replace
+        // that file. baseUrl must be a PUBLICLY reachable origin in real
+        // sends (emailAssetBaseUrl) — email clients fetch images through
+        // their own proxies, which can never reach localhost.
+        src={`${baseUrl}/static/color-logo.png`}
         alt="invoicer"
         width={148}
         height={45}

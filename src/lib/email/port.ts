@@ -4,22 +4,11 @@ import { maskPiiInText } from "@/lib/domain/pii";
  * Email port (ARCHITECTURE.md §1.1): services and auth config depend on this
  * interface, never on a provider. Resend in production; console in dev.
  */
-/** Inline attachment (e.g. the brand logo referenced as `cid:<contentId>`). */
-export interface EmailAttachment {
-  filename: string;
-  /** Base64-encoded file content. */
-  contentBase64: string;
-  contentType: string;
-  /** When set, the attachment renders inline via `cid:` references. */
-  contentId?: string;
-}
-
 export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
   html?: string;
-  attachments?: EmailAttachment[];
 }
 
 export interface EmailSender {
@@ -55,13 +44,6 @@ class ResendEmailSender implements EmailSender {
         subject: message.subject,
         text: message.text,
         html: message.html,
-        attachments: message.attachments?.map((a) => ({
-          filename: a.filename,
-          content: a.contentBase64,
-          content_type: a.contentType,
-          // Resend renders attachments with a content_id inline (`cid:` refs)
-          content_id: a.contentId,
-        })),
       }),
     });
     if (!response.ok) {

@@ -50,23 +50,19 @@ async function main() {
     "static/color-logo.png",
   ]);
 
-  // send path: templates.tsx passes a cid: source so the logo ships as an
-  // inline attachment instead of depending on a publicly hosted URL
-  const vCid = await renderBoth(
+  // send path: with a real base URL the logo must be an absolute hosted URL
+  // (email clients fetch images through their own proxies — relative paths
+  // and localhost never resolve there)
+  const vHosted = await renderBoth(
     <VerificationEmail
       name="Erick"
       url="https://app.example/verify"
-      baseUrl="http://localhost:3000"
-      logoSrc="cid:invoicer-logo"
+      baseUrl="https://assets.example"
     />,
   );
-  assert("verification (cid logo)", vCid.html, vCid.text, [
-    'src="cid:invoicer-logo"',
+  assert("verification (hosted logo)", vHosted.html, vHosted.text, [
+    'src="https://assets.example/static/color-logo.png"',
   ]);
-  if (vCid.html.includes("localhost:3000/static/color-logo.png")) {
-    failed = true;
-    console.log("   FAIL cid render still references the hosted logo URL");
-  }
 
   const p = await renderBoth(
     <PasswordResetEmail url="https://app.example/reset" baseUrl="" />,

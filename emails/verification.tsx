@@ -20,15 +20,12 @@ interface VerificationEmailProps {
   url: string;
   /** Absolute origin for hosted images (email clients need full URLs). */
   baseUrl: string;
-  /** Overrides the logo image source (real sends use a `cid:` attachment). */
-  logoSrc?: string;
 }
 
 export const VerificationEmail = ({
   name,
   url,
   baseUrl,
-  logoSrc,
 }: VerificationEmailProps) => (
   <Tailwind config={emailTheme}>
     <Html>
@@ -41,7 +38,7 @@ export const VerificationEmail = ({
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
             <Section className="bg-bg border-stroke rounded-[8px] border">
-              <EmailLogo baseUrl={baseUrl} src={logoSrc} />
+              <EmailLogo baseUrl={baseUrl} />
 
               <Section className="mobile:px-6! px-10 pt-8">
                 <Section className="mb-9">
