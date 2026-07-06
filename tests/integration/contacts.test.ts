@@ -17,9 +17,11 @@ import {
 } from "@/lib/services/contacts";
 import {
   createCustomer,
+  getCustomer,
   getCustomerMails,
   getCustomerTimeline,
   listCustomersWithPrimaryContact,
+  updateCustomer,
 } from "@/lib/services/customers";
 import {
   acceptInvitation,
@@ -197,6 +199,78 @@ describe("contact persons", () => {
       .from(customerContacts)
       .where(eq(customerContacts.customerId, doomed));
     expect(raw.deletedAt).not.toBeNull(); // tombstoned, not hard-deleted
+  });
+
+  it("single-save edit applies company + contact grid in one transaction", async () => {
+    const { customerId: gridCustomer } = await createCustomer(db, actorInA(), {
+      name: "Grid Ltd",
+      primaryContact: { firstName: "Peter", email: "peter@grid.example" },
+    });
+    const [p1] = await listContacts(db, fx.orgA, gridCustomer);
+    const { contactId: c2 } = await createContact(db, actorInA(), {
+      customerId: gridCustomer,
+      firstName: "Cathy",
+      isPrimary: false,
+    });
+    const { contactId: c4 } = await createContact(db, actorInA(), {
+      customerId: gridCustomer,
+      firstName: "Doomed",
+      isPrimary: false,
+    });
+
+    // one save: rename the company, demote Peter, promote Cathy with a new
+    // designation, add a brand-new person, remove Doomed
+    await updateCustomer(
+      db,
+      actorInA(),
+      { id: gridCustomer, version: 1, name: "Grid Renamed Ltd" },
+      [
+        { id: p1.id, version: p1.version, firstName: "Peter", email: "peter@grid.example", isPrimary: false },
+        { id: c2, version: 1, firstName: "Cathy", designation: "Accounts", isPrimary: true },
+        { firstName: "Newton", email: "newton@grid.example", isPrimary: false },
+        { id: c4, version: 1, firstName: "Doomed", deleted: true },
+      ],
+    );
+
+    const renamed = await getCustomer(db, fx.orgA, gridCustomer);
+    expect(renamed?.name).toBe("Grid Renamed Ltd");
+    const after = await listContacts(db, fx.orgA, gridCustomer);
+    expect(after.length).toBe(3); // Peter, Cathy, Newton — Doomed gone
+    const primaries = after.filter((c) => c.isPrimary);
+    expect(primaries.length).toBe(1);
+    expect(primaries[0].firstName).toBe("Cathy");
+    expect(primaries[0].designation).toBe("Accounts");
+    expect(after.map((c) => c.firstName)).toContain("Newton");
+    expect(after.map((c) => c.id)).not.toContain(c4);
+  });
+
+  it("a bad contact row rolls back the company change too (all-or-nothing)", async () => {
+    const { customerId: atomicCustomer } = await createCustomer(db, actorInA(), {
+      name: "Atomic Ltd",
+      primaryContact: { firstName: "Ann" },
+    });
+    const [contact] = await listContacts(db, fx.orgA, atomicCustomer);
+
+    await expect(
+      updateCustomer(
+        db,
+        actorInA(),
+        { id: atomicCustomer, version: 1, name: "Should Not Persist Ltd" },
+        [
+          {
+            id: contact.id,
+            version: 999, // stale — genuine conflict
+            firstName: "Ann Updated",
+            isPrimary: true,
+          },
+        ],
+      ),
+    ).rejects.toThrow(ConflictError);
+
+    const untouched = await getCustomer(db, fx.orgA, atomicCustomer);
+    expect(untouched?.name).toBe("Atomic Ltd"); // rolled back with the contacts
+    const [contactAfter] = await listContacts(db, fx.orgA, atomicCustomer);
+    expect(contactAfter.firstName).toBe("Ann");
   });
 
   it("soft delete removes the contact, keeps the audit trail", async () => {

@@ -58,3 +58,25 @@ export type DeleteContactInput = z.input<typeof deleteContactSchema>;
 /** Inline primary contact accepted when creating a customer. */
 export const inlineContactSchema = z.object(contactFields);
 export type InlineContactInput = z.input<typeof inlineContactSchema>;
+
+/**
+ * One row of the edit-customer contact grid. Existing rows carry id+version
+ * (optimistic lock); new rows carry neither; removal is an explicit flag so
+ * a client-side rendering bug can never silently delete people.
+ */
+export const contactRowSchema = z.object({
+  id: z.string().min(1).nullish(),
+  version: z.coerce.number().int().positive().nullish(),
+  isPrimary: z.coerce.boolean().default(false),
+  deleted: z.coerce.boolean().default(false),
+  ...contactFields,
+});
+export type ContactRowInput = z.input<typeof contactRowSchema>;
+
+export const contactRowsSchema = z
+  .array(contactRowSchema)
+  .max(20)
+  .refine(
+    (rows) => rows.filter((r) => r.isPrimary && !r.deleted).length <= 1,
+    "Only one contact person can be primary",
+  );

@@ -24,7 +24,7 @@ export default async function NewProductPage({
         <CardTitle className="font-heading text-lg">New product</CardTitle>
       </CardHeader>
       <CardContent>
-        <ProductForm organizationId={orgId} />
+        <ProductForm organizationId={orgId} cancelHref={`/orgs/${orgId}/products`} />
       </CardContent>
     </Card>
   );

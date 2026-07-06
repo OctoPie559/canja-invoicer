@@ -12,7 +12,8 @@ import {
   user,
 } from "@/lib/db/schema";
 import { Money } from "@/lib/domain/money";
-import { insertContact } from "./contacts";
+import { applyContactChanges, insertContact } from "./contacts";
+import type { ContactRowInput } from "@/lib/validation/contacts";
 import { newId } from "@/lib/domain/ids";
 import {
   ConflictError,
@@ -105,6 +106,9 @@ export async function updateCustomer(
   db: Database,
   ctx: ActorContext,
   input: UpdateCustomerInput,
+  /** Optional full contact-grid edit, applied in the SAME transaction —
+   *  the edit form saves company + people as one all-or-nothing unit. */
+  contactRows?: ContactRowInput[],
 ): Promise<void> {
   const data = updateCustomerSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("customer.update");
@@ -112,6 +116,10 @@ export async function updateCustomer(
   await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "customer.update");
+
+    if (contactRows) {
+      await applyContactChanges(tx, ctx, data.id, contactRows);
+    }
 
     const [current] = await tx
       .select()

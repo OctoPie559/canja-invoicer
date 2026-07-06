@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import type { ActionState } from "@/app/actions/organizations";
 import {
@@ -36,9 +37,11 @@ export interface ProductFormValues {
 export function ProductForm({
   organizationId,
   product,
+  cancelHref,
 }: {
   organizationId: string;
   product?: ProductFormValues;
+  cancelHref: string;
 }) {
   const editing = Boolean(product?.id);
   const [state, action, pending] = useActionState(
@@ -113,9 +116,14 @@ export function ProductForm({
           />
         </div>
       </div>
-      <Button type="submit" disabled={pending}>
-        {pending ? "Saving…" : editing ? "Save changes" : "Create product"}
-      </Button>
+      <div className="flex items-center gap-2 border-t pt-4">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : editing ? "Save changes" : "Create product"}
+        </Button>
+        <Button asChild type="button" variant="outline">
+          <Link href={cancelHref}>Cancel</Link>
+        </Button>
+      </div>
     </form>
   );
 }

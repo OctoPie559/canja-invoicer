@@ -17,9 +17,11 @@ import {
   createContactSchema,
   deleteContactSchema,
   updateContactSchema,
+  type ContactRowInput,
   type CreateContactInput,
   type DeleteContactInput,
   type UpdateContactInput,
+  contactRowsSchema,
 } from "@/lib/validation/contacts";
 
 /**
@@ -295,6 +297,136 @@ export async function deleteContact(
       },
     });
   });
+}
+
+/**
+ * Apply a full contact-grid edit inside the CALLER's transaction (used by
+ * the single-save edit-customer flow). Caller has already authorized
+ * customer.update and verified the customer belongs to the org. Ordering:
+ * deletions → updates → creations, so a primary moving from a removed row
+ * to a new one never trips the partial unique index mid-flight.
+ */
+export async function applyContactChanges(
+  tx: Transaction,
+  ctx: ActorContext,
+  customerId: string,
+  rows: ContactRowInput[],
+): Promise<void> {
+  const data = contactRowsSchema.parse(rows);
+  const wantsPrimary = data.some((r) => r.isPrimary && !r.deleted);
+  let demotedIds: string[] = [];
+  if (wantsPrimary) {
+    const keepId = data.find((r) => r.isPrimary && !r.deleted)?.id ?? undefined;
+    demotedIds = await demoteCurrentPrimary(
+      tx,
+      ctx.organizationId,
+      customerId,
+      keepId,
+    );
+  }
+
+  const ordered = [
+    ...data.filter((r) => r.deleted && r.id),
+    ...data.filter((r) => !r.deleted && r.id),
+    ...data.filter((r) => !r.deleted && !r.id),
+  ];
+
+  for (const row of ordered) {
+    if (row.id) {
+      const [current] = await tx
+        .select()
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.id, row.id),
+            eq(customerContacts.organizationId, ctx.organizationId),
+            eq(customerContacts.customerId, customerId),
+            isNull(customerContacts.deletedAt),
+          ),
+        )
+        .for("update");
+      if (!current) throw new NotFoundError("contact");
+      // the demotion above bumped rows WE touched in this transaction —
+      // exactly those may be one version ahead of the client's copy; any
+      // other mismatch is a genuine concurrent edit
+      const expectedVersion =
+        (row.version ?? 0) + (demotedIds.includes(row.id) ? 1 : 0);
+      if (current.version !== expectedVersion) {
+        throw new ConflictError("contact");
+      }
+
+      if (row.deleted) {
+        await tx
+          .update(customerContacts)
+          .set({
+            deletedAt: new Date(),
+            isPrimary: false,
+            version: current.version + 1,
+            updatedAt: new Date(),
+          })
+          .where(eq(customerContacts.id, row.id));
+        await writeAudit(tx, ctx, {
+          action: "contact.removed",
+          entityType: "customer",
+          entityId: customerId,
+          changes: {
+            before: {
+              contactId: current.id,
+              name: [current.firstName, current.lastName]
+                .filter(Boolean)
+                .join(" "),
+            },
+          },
+        });
+        continue;
+      }
+
+      const next = {
+        salutation: row.salutation ?? null,
+        firstName: row.firstName,
+        lastName: row.lastName ?? null,
+        email: row.email ?? null,
+        workPhone: row.workPhone ?? null,
+        mobile: row.mobile ?? null,
+        designation: row.designation ?? null,
+        department: row.department ?? null,
+        isPrimary: row.isPrimary,
+      };
+      const diff = changedFields(current, next, EDITABLE_FIELDS);
+      if (diff.changed.length === 0) continue;
+      try {
+        await tx
+          .update(customerContacts)
+          .set({ ...next, version: current.version + 1, updatedAt: new Date() })
+          .where(eq(customerContacts.id, row.id));
+      } catch (error) {
+        mapPrimaryRace(error);
+      }
+      await writeAudit(tx, ctx, {
+        action: "contact.updated",
+        entityType: "customer",
+        entityId: customerId,
+        changes: { before: diff.before, after: diff.after },
+      });
+    } else if (!row.deleted) {
+      await insertContact(
+        tx,
+        ctx,
+        customerId,
+        {
+          salutation: row.salutation,
+          firstName: row.firstName,
+          lastName: row.lastName,
+          email: row.email,
+          workPhone: row.workPhone,
+          mobile: row.mobile,
+          designation: row.designation,
+          department: row.department,
+        },
+        row.isPrimary,
+      );
+    }
+  }
 }
 
 /** Contacts for a customer, primary first. */

@@ -92,12 +92,28 @@ export async function updateCustomerAction(
   const ctx = await userActor(session.user.id, organizationId);
   const id = String(formData.get("id") ?? "");
   try {
+    // optional contact-grid payload — saved in the same transaction as the
+    // company fields (service validates the parsed rows with Zod)
+    const contactsRaw = String(formData.get("contacts") ?? "");
+    let contactRows: unknown;
+    if (contactsRaw) {
+      try {
+        contactRows = JSON.parse(contactsRaw);
+      } catch {
+        return { error: "Invalid contact persons payload" };
+      }
+    }
     await runWithActor(ctx, () =>
-      updateCustomer(getDb(), ctx, {
-        id,
-        version: Number(formData.get("version") ?? 0),
-        ...customerFields(formData),
-      }),
+      updateCustomer(
+        getDb(),
+        ctx,
+        {
+          id,
+          version: Number(formData.get("version") ?? 0),
+          ...customerFields(formData),
+        },
+        contactRows as never,
+      ),
     );
   } catch (error) {
     return mapError(error);

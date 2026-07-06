@@ -68,6 +68,7 @@ export default async function ProductDetailPage({
           <CardContent>
             <ProductForm
               organizationId={orgId}
+              cancelHref={`/orgs/${orgId}/products`}
               product={{
                 id: product.id,
                 version: product.version,
