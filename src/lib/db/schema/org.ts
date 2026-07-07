@@ -31,6 +31,9 @@ export const organizationSettings = pgTable("organization_settings", {
     .notNull()
     .default(30),
   defaultTaxRateId: text("default_tax_rate_id"),
+  // prefilled into the builder for new invoices; editable per document
+  defaultInvoiceNotes: text("default_invoice_notes"),
+  defaultInvoiceTerms: text("default_invoice_terms"),
   ...timestamps,
   ...softDelete,
   ...optimisticLock,

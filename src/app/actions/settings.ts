@@ -8,9 +8,12 @@ import { ZodError } from "zod";
 import {
   createTaxRate,
   deleteTaxRate,
+  updateInvoiceDefaults,
   updateInvoiceNumbering,
+  updatePaymentTermsDefault,
   updateTaxRate,
 } from "@/lib/services/settings";
+import { updateOrganizationName } from "@/lib/services/organizations";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
@@ -43,7 +46,7 @@ export async function createTaxRateAction(
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/settings`);
+  redirect(`/orgs/${organizationId}/settings/tax-rates`);
 }
 
 export async function updateTaxRateAction(
@@ -65,7 +68,7 @@ export async function updateTaxRateAction(
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/settings`);
+  redirect(`/orgs/${organizationId}/settings/tax-rates`);
 }
 
 export async function deleteTaxRateAction(
@@ -82,7 +85,7 @@ export async function deleteTaxRateAction(
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/settings`);
+  redirect(`/orgs/${organizationId}/settings/tax-rates`);
 }
 
 export async function updateInvoiceNumberingAction(
@@ -98,6 +101,25 @@ export async function updateInvoiceNumberingAction(
         version: Number(formData.get("version") ?? 0),
         invoicePrefix: String(formData.get("invoicePrefix") ?? ""),
         invoiceNextNumber: Number(formData.get("invoiceNextNumber") ?? 1),
+      }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/settings/invoices`);
+}
+
+export async function updatePaymentTermsDefaultAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      updatePaymentTermsDefault(getDb(), ctx, {
+        version: Number(formData.get("version") ?? 0),
         defaultPaymentTermsDays: Number(
           formData.get("defaultPaymentTermsDays") ?? 30,
         ),
@@ -106,5 +128,46 @@ export async function updateInvoiceNumberingAction(
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}/settings`);
+  redirect(`/orgs/${organizationId}/settings/payment-terms`);
+}
+
+export async function updateInvoiceDefaultsAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      updateInvoiceDefaults(getDb(), ctx, {
+        version: Number(formData.get("version") ?? 0),
+        defaultTaxRateId: String(formData.get("defaultTaxRateId") ?? ""),
+        defaultInvoiceNotes: String(formData.get("defaultInvoiceNotes") ?? ""),
+        defaultInvoiceTerms: String(formData.get("defaultInvoiceTerms") ?? ""),
+      }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/settings/invoices`);
+}
+
+export async function updateOrganizationNameAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      updateOrganizationName(getDb(), ctx, {
+        name: String(formData.get("name") ?? ""),
+      }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/settings/profile`);
 }

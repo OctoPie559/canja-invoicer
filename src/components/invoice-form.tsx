@@ -67,6 +67,11 @@ export interface InvoiceFormProps {
   /** Free plans invoice in base currency only (multiCurrency is Pro). */
   allowedCurrencies: string[];
   defaultPaymentTermsDays: number;
+  /** org-default tax rate (bps) applied to newly added lines */
+  defaultLineTaxRateBps: number;
+  /** org-default notes/terms text, prefilled on NEW invoices only */
+  defaultNotes: string | null;
+  defaultTerms: string | null;
   invoice?: {
     id: string;
     version: number;
@@ -102,6 +107,9 @@ export function InvoiceForm({
   baseCurrency,
   allowedCurrencies,
   defaultPaymentTermsDays,
+  defaultLineTaxRateBps,
+  defaultNotes,
+  defaultTerms,
   invoice,
 }: InvoiceFormProps) {
   const editing = Boolean(invoice);
@@ -109,8 +117,12 @@ export function InvoiceForm({
 
   const [customerId, setCustomerId] = useState(invoice?.customerId ?? "");
   const [currency, setCurrency] = useState(invoice?.currency ?? baseCurrency);
+  const newLine = (): InvoiceFormLine => ({
+    ...EMPTY_LINE,
+    taxRateBps: defaultLineTaxRateBps,
+  });
   const [lines, setLines] = useState<InvoiceFormLine[]>(
-    invoice?.lines.length ? invoice.lines : [{ ...EMPTY_LINE }],
+    invoice?.lines.length ? invoice.lines : [newLine()],
   );
   // payment terms drive the due date; "custom" means the due date was set
   // by hand and travels as-is (paymentTermsDays stays null on the draft)
@@ -483,7 +495,7 @@ export function InvoiceForm({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => setLines((prev) => [...prev, { ...EMPTY_LINE }])}
+          onClick={() => setLines((prev) => [...prev, newLine()])}
         >
           <Plus />
           Add line
@@ -503,7 +515,7 @@ export function InvoiceForm({
               name="notes"
               rows={3}
               placeholder="Thank you for your business."
-              defaultValue={invoice?.notes ?? ""}
+              defaultValue={invoice ? (invoice.notes ?? "") : (defaultNotes ?? "")}
             />
           </div>
           <div className="space-y-2">
@@ -513,7 +525,7 @@ export function InvoiceForm({
               name="terms"
               rows={3}
               placeholder="Payment due within the stated terms."
-              defaultValue={invoice?.terms ?? ""}
+              defaultValue={invoice ? (invoice.terms ?? "") : (defaultTerms ?? "")}
             />
           </div>
         </fieldset>

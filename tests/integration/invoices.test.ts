@@ -27,10 +27,13 @@ import {
   createTaxRate,
   getInvoiceSettings,
   listTaxRates,
+  updateInvoiceDefaults,
   updateInvoiceNumbering,
+  updatePaymentTermsDefault,
   updateTaxRate,
   deleteTaxRate,
 } from "@/lib/services/settings";
+import { updateOrganizationName } from "@/lib/services/organizations";
 import { createTestDb } from "../helpers/db";
 import {
   createTwoOrgFixture,
@@ -584,7 +587,6 @@ describe("settings service (tax rates + numbering)", () => {
       version: before.version,
       invoicePrefix: "ACME",
       invoiceNextNumber: before.invoiceNextNumber + 10,
-      defaultPaymentTermsDays: 14,
     });
     const after = await getInvoiceSettings(db, fx.orgA);
     expect(after.invoicePrefix).toBe("ACME");
@@ -595,8 +597,66 @@ describe("settings service (tax rates + numbering)", () => {
         version: after.version,
         invoicePrefix: "ACME",
         invoiceNextNumber: after.invoiceNextNumber - 1,
-        defaultPaymentTermsDays: 14,
       }),
     ).rejects.toThrow(ValidationError);
+  });
+
+  it("payment-terms default and invoice defaults persist with audit", async () => {
+    let settings = await getInvoiceSettings(db, fx.orgA);
+    await updatePaymentTermsDefault(db, actorInA(), {
+      version: settings.version,
+      defaultPaymentTermsDays: 14,
+    });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    expect(settings.defaultPaymentTermsDays).toBe(14);
+
+    const { taxRateId } = await createTaxRate(db, actorInA(), {
+      name: "VAT",
+      rateBps: 1600,
+    });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    await updateInvoiceDefaults(db, actorInA(), {
+      version: settings.version,
+      defaultTaxRateId: taxRateId,
+      defaultInvoiceNotes: "Asante sana!",
+      defaultInvoiceTerms: "Payment due per stated terms.",
+    });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    expect(settings.defaultTaxRateId).toBe(taxRateId);
+    expect(settings.defaultInvoiceNotes).toBe("Asante sana!");
+    expect(settings.defaultInvoiceTerms).toBe("Payment due per stated terms.");
+
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "settings.updated"));
+    expect(audits.length).toBeGreaterThanOrEqual(2);
+
+    // deleting the default tax rate clears the pointer (existing behavior)
+    const rate = (await listTaxRates(db, fx.orgA)).find((r) => r.id === taxRateId)!;
+    await deleteTaxRate(db, actorInA(), { id: taxRateId, version: rate.version });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    expect(settings.defaultTaxRateId).toBeNull();
+  });
+
+  it("renames the organization with an audit trail; viewers cannot", async () => {
+    await updateOrganizationName(db, actorInA(), { name: "Acme Studios" });
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "organization.updated"));
+    expect(audit).toBeDefined();
+    expect(audit.organizationId).toBe(fx.orgA);
+
+    await expect(
+      updateOrganizationName(db, actorInB(), { name: "x" }),
+    ).rejects.toThrow(ValidationError); // too short, rejected before anything else
+    await expect(
+      updateOrganizationName(
+        db,
+        { actorType: "user", actorId: fx.bob.id, organizationId: fx.orgA },
+        { name: "Hostile Takeover Ltd" },
+      ),
+    ).rejects.toThrow(PermissionError); // bob is not a member of org A
   });
 });

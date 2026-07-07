@@ -5,8 +5,22 @@ import { Plus, Trash2 } from "lucide-react";
 import {
   createTaxRateAction,
   deleteTaxRateAction,
+  updateInvoiceDefaultsAction,
   updateInvoiceNumberingAction,
+  updatePaymentTermsDefaultAction,
 } from "@/app/actions/settings";
+import {
+  PAYMENT_TERMS_PRESETS,
+  paymentTermsLabel,
+} from "@/lib/domain/payment-terms";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { ActionState } from "@/app/actions/organizations";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -124,7 +138,6 @@ export function InvoiceNumberingSettings({
   settings: {
     invoicePrefix: string;
     invoiceNextNumber: number;
-    defaultPaymentTermsDays: number;
     version: number;
   };
   canManage: boolean;
@@ -178,19 +191,6 @@ export function InvoiceNumberingSettings({
             required
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="num-terms">Payment terms (days)</Label>
-          <Input
-            id="num-terms"
-            name="defaultPaymentTermsDays"
-            type="number"
-            min={0}
-            max={365}
-            defaultValue={settings.defaultPaymentTermsDays}
-            className="w-36"
-            required
-          />
-        </div>
         <Button type="submit" size="sm" disabled={pending}>
           {pending ? "Saving…" : "Save"}
         </Button>
@@ -199,6 +199,166 @@ export function InvoiceNumberingSettings({
         Next invoice will be numbered{" "}
         <span className="font-mono">{preview}</span>. The counter only moves
         forward — numbers are never reused.
+      </p>
+    </form>
+  );
+}
+
+export function PaymentTermsDefaultSettings({
+  organizationId,
+  settings,
+  canManage,
+}: {
+  organizationId: string;
+  settings: { defaultPaymentTermsDays: number; version: number };
+  canManage: boolean;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    updatePaymentTermsDefaultAction.bind(null, organizationId),
+    { error: null },
+  );
+
+  if (!canManage) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Default terms:{" "}
+        <span className="font-medium text-foreground">
+          {paymentTermsLabel(settings.defaultPaymentTermsDays)}
+        </span>
+      </p>
+    );
+  }
+
+  // offer the current value even when it is not one of the named presets
+  const options = [
+    ...new Set([
+      ...PAYMENT_TERMS_PRESETS.map((p) => p.days),
+      settings.defaultPaymentTermsDays,
+    ]),
+  ].sort((a, b) => a - b);
+
+  return (
+    <form action={action} className="space-y-4">
+      {state.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
+      <input type="hidden" name="version" value={settings.version} />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="terms-default">Default payment terms</Label>
+          <Select
+            name="defaultPaymentTermsDays"
+            defaultValue={String(settings.defaultPaymentTermsDays)}
+          >
+            <SelectTrigger id="terms-default" className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {options.map((days) => (
+                <SelectItem key={days} value={String(days)}>
+                  {paymentTermsLabel(days)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Used when neither the invoice nor the customer specifies terms.
+        Customers can carry their own terms on their profile.
+      </p>
+    </form>
+  );
+}
+
+export function InvoiceDefaultsSettings({
+  organizationId,
+  settings,
+  taxRates,
+  canManage,
+}: {
+  organizationId: string;
+  settings: {
+    defaultTaxRateId: string | null;
+    defaultInvoiceNotes: string | null;
+    defaultInvoiceTerms: string | null;
+    version: number;
+  };
+  taxRates: Array<{ id: string; name: string; rateBps: number }>;
+  canManage: boolean;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    updateInvoiceDefaultsAction.bind(null, organizationId),
+    { error: null },
+  );
+
+  if (!canManage) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Defaults are managed by organization admins.
+      </p>
+    );
+  }
+
+  return (
+    <form action={action} className="space-y-4">
+      {state.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
+      <input type="hidden" name="version" value={settings.version} />
+      <div className="space-y-1.5">
+        <Label htmlFor="def-tax">Default tax rate for new lines</Label>
+        <Select
+          name="defaultTaxRateId"
+          defaultValue={settings.defaultTaxRateId ?? "none"}
+        >
+          <SelectTrigger id="def-tax" className="w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No tax</SelectItem>
+            {taxRates.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.name} ({(t.rateBps / 100).toFixed(2).replace(/\.?0+$/, "")}%)
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="def-notes">Default customer notes</Label>
+          <Textarea
+            id="def-notes"
+            name="defaultInvoiceNotes"
+            rows={3}
+            placeholder="Thank you for your business."
+            defaultValue={settings.defaultInvoiceNotes ?? ""}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="def-terms">Default terms & conditions</Label>
+          <Textarea
+            id="def-terms"
+            name="defaultInvoiceTerms"
+            rows={3}
+            placeholder="Payment due within the stated terms."
+            defaultValue={settings.defaultInvoiceTerms ?? ""}
+          />
+        </div>
+      </div>
+      <Button type="submit" size="sm" disabled={pending}>
+        {pending ? "Saving…" : "Save defaults"}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Prefilled into every new invoice; editable per document.
       </p>
     </form>
   );

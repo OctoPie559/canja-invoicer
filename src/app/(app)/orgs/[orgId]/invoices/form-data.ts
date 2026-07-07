@@ -57,5 +57,10 @@ export async function loadInvoiceFormData(
       ? [...SUPPORTED_CURRENCIES]
       : [settings.baseCurrency],
     defaultPaymentTermsDays: settings.defaultPaymentTermsDays,
+    defaultLineTaxRateBps: settings.defaultTaxRateId
+      ? (rateByTaxId.get(settings.defaultTaxRateId) ?? 0)
+      : 0,
+    defaultNotes: settings.defaultInvoiceNotes,
+    defaultTerms: settings.defaultInvoiceTerms,
   };
 }
