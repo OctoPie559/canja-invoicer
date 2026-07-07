@@ -4,11 +4,19 @@ import { maskPiiInText } from "@/lib/domain/pii";
  * Email port (ARCHITECTURE.md §1.1): services and auth config depend on this
  * interface, never on a provider. Resend in production; console in dev.
  */
+/** File attachment (invoice PDFs). Content is base64. */
+export interface EmailAttachment {
+  filename: string;
+  contentBase64: string;
+  contentType: string;
+}
+
 export interface EmailMessage {
   to: string;
   subject: string;
   text: string;
   html?: string;
+  attachments?: EmailAttachment[];
 }
 
 export interface EmailSender {
@@ -44,6 +52,11 @@ class ResendEmailSender implements EmailSender {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        attachments: message.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.contentBase64,
+          content_type: a.contentType,
+        })),
       }),
     });
     if (!response.ok) {

@@ -1,8 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { BadgeCheck, Ban } from "lucide-react";
-import { issueInvoiceAction, voidInvoiceAction } from "@/app/actions/invoices";
+import { BadgeCheck, Ban, Send } from "lucide-react";
+import {
+  issueInvoiceAction,
+  sendInvoiceAction,
+  voidInvoiceAction,
+} from "@/app/actions/invoices";
 import type { ActionState } from "@/app/actions/organizations";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -197,6 +201,109 @@ export function VoidInvoiceDialog({
             </Button>
             <Button type="submit" variant="destructive" disabled={pending}>
               {pending ? "Voiding…" : "Void invoice"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function SendInvoiceDialog({
+  organizationId,
+  invoiceId,
+  displayNumber,
+  contacts,
+}: {
+  organizationId: string;
+  invoiceId: string;
+  displayNumber: string;
+  /** the customer's contact persons; only those with an email are sendable */
+  contacts: Array<{
+    id: string;
+    name: string;
+    email: string | null;
+  }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>(() =>
+    contacts.filter((c) => c.email).map((c) => c.id),
+  );
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    sendInvoiceAction.bind(null, organizationId),
+    { error: null },
+  );
+  const toggle = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  const sendable = contacts.filter((c) => c.email);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Send />
+          Send
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form action={action} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Send {displayNumber}</DialogTitle>
+            <DialogDescription>
+              Emails the invoice with the PDF attached and a link to the
+              hosted view. Recipients are this customer&apos;s contact
+              persons.
+            </DialogDescription>
+          </DialogHeader>
+          {state.error && (
+            <Alert variant="destructive">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          )}
+          <input type="hidden" name="id" value={invoiceId} />
+          <input
+            type="hidden"
+            name="contactIds"
+            value={JSON.stringify(selected)}
+          />
+          {sendable.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              None of this customer&apos;s contact persons has an email
+              address. Add one on the customer&apos;s page first.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {sendable.map((c) => (
+                <li key={c.id}>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(c.id)}
+                      onChange={() => toggle(c.id)}
+                      className="size-4 accent-primary"
+                    />
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-muted-foreground">{c.email}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={pending || selected.length === 0}
+            >
+              {pending ? "Sending…" : "Send invoice"}
             </Button>
           </DialogFooter>
         </form>

@@ -10,6 +10,7 @@
  */
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
+import { InvoiceSendEmail } from "../emails/invoice-send";
 import { PasswordResetEmail } from "../emails/password-reset";
 import { SubscriptionConfirmation } from "../emails/subscription-confirmation";
 import { SubscriptionUpdate } from "../emails/subscription-update";
@@ -131,11 +132,70 @@ async function main() {
     "static/color-logo.png",
   ]);
 
+  const inv = await renderBoth(
+    <InvoiceSendEmail
+      organizationName="Njogu-ini Studios"
+      displayNumber="INV-000042"
+      total="KES 3,480.00"
+      dueDate="2026-08-06"
+      url="https://app.example/i/tok"
+      baseUrl=""
+    />,
+  );
+  assert("invoice send", inv.html, inv.text, [
+    "INV-000042",
+    "KES 3,480.00",
+    "View invoice",
+    "static/color-logo.png",
+  ]);
+
+  // PDF byte-stability: the same snapshot must produce the same document.
+  // Only the volatile PDF metadata (CreationDate, trailer ID) may differ.
+  const { renderInvoicePdf } = await import("../src/lib/pdf/invoice");
+  const snapshot = {
+    customer: {
+      name: "Acme Ltd", customerType: "business",
+      addressLine1: "1 Biashara St", addressLine2: null,
+      city: "Nairobi", country: "Kenya",
+      shippingAddressLine1: null, shippingAddressLine2: null,
+      shippingCity: null, shippingCountry: null,
+      primaryContact: { firstName: "Grace", lastName: null, email: "g@acme.test" },
+    },
+    branding: {
+      legalName: "Njogu-ini Studios", addressLine1: "5 Moi Ave", addressLine2: null,
+      city: "Nyeri", country: "Kenya", kraPin: "A012345678Z",
+      contactEmail: "billing@studio.test", contactPhone: null,
+      accentColor: "#103B05", logoKey: null,
+    },
+    lines: [{
+      description: "Consulting", quantity: "2.000", unitPriceMinor: "150000",
+      discountBps: 500, taxRateBps: 1600, lineTotalMinor: "330600", position: 0,
+    }],
+    totals: {
+      subtotalMinor: "300000", discountTotalMinor: "15000",
+      taxTotalMinor: "45600", totalMinor: "330600",
+    },
+    currency: "KES", baseCurrency: "KES", fxRateToBase: null,
+    issueDate: "2026-07-07", dueDate: "2026-08-06", paymentTermsDays: 30,
+    displayNumber: "INV-000042", notes: "Asante!", terms: "Net 30",
+  };
+  const strip = (b: Buffer) =>
+    b.toString("latin1")
+      .replace(/\/CreationDate \(D:[^)]*\)/g, "/CreationDate (D:0)")
+      .replace(/\/ID \[[^\]]*\]/g, "/ID []");
+  const pdf1 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true });
+  const pdf2 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true });
+  const stable = strip(pdf1) === strip(pdf2) && pdf1.length > 2000;
+  console.log(
+    `${stable ? "PASS" : "FAIL"} invoice pdf (bytes ${pdf1.length}, stable ${strip(pdf1) === strip(pdf2)})`,
+  );
+  if (!stable) failed = true;
+
   if (failed) {
     console.error("\nEmail render check FAILED");
     process.exit(1);
   }
-  console.log("\nAll email templates render cleanly.");
+  console.log("\nAll email templates and the invoice PDF render cleanly.");
 }
 
 main().catch((error) => {
