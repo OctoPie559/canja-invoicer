@@ -1,6 +1,7 @@
 import { render } from "@react-email/render";
 import { emailAssetBaseUrl } from "@/lib/config";
 import { InvitationEmail } from "../../../emails/invitation";
+import { InvoiceSendEmail } from "../../../emails/invoice-send";
 import { PasswordResetEmail } from "../../../emails/password-reset";
 import { VerificationEmail } from "../../../emails/verification";
 import type { EmailMessage } from "./port";
@@ -72,3 +73,47 @@ export async function invitationEmail(params: {
     ...body,
   };
 }
+
+// ---------------------------------------------------------------------------
+// invoice send (slice 3): rich HTML + the PDF attached. Injected into the
+// pure sendInvoice service as its InvoiceEmailBuilder (same pattern as
+// invitations — the service defaults to plain text and never imports JSX).
+
+import { Money } from "@/lib/domain/money";
+import { renderInvoicePdf } from "@/lib/pdf/invoice";
+import type { InvoiceEmailBuilder } from "@/lib/services/invoices";
+
+export const invoiceEmail: InvoiceEmailBuilder = async ({
+  snapshot,
+  status,
+  publicUrl,
+  organizationName,
+  watermark,
+}) => {
+  const total = Money.fromMinor(
+    BigInt(snapshot.totals.totalMinor),
+    snapshot.currency,
+  ).toString();
+  const body = await renderBoth(
+    <InvoiceSendEmail
+      organizationName={organizationName}
+      displayNumber={snapshot.displayNumber}
+      total={total}
+      dueDate={snapshot.dueDate}
+      url={publicUrl}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  const pdf = await renderInvoicePdf({ snapshot, status, watermark });
+  return {
+    subject: `Invoice ${snapshot.displayNumber} from ${organizationName}`,
+    ...body,
+    attachments: [
+      {
+        filename: `${snapshot.displayNumber}.pdf`,
+        contentBase64: pdf.toString("base64"),
+        contentType: "application/pdf",
+      },
+    ],
+  };
+};

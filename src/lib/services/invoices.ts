@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { and, asc, desc, eq, gte, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   auditLog,
   customerContacts,
   customers,
+  emailMessages,
   invoiceLineItems,
   invoices,
+  organization,
   organizationBranding,
   organizationSettings,
   subscriptions,
@@ -46,14 +48,26 @@ import {
   createInvoiceDraftSchema,
   deleteInvoiceDraftSchema,
   issueInvoiceSchema,
+  sendInvoiceSchema,
   updateInvoiceDraftSchema,
   voidInvoiceSchema,
   type CreateInvoiceDraftInput,
   type DeleteInvoiceDraftInput,
   type IssueInvoiceInput,
+  type SendInvoiceInput,
   type UpdateInvoiceDraftInput,
   type VoidInvoiceInput,
 } from "@/lib/validation/invoices";
+import {
+  getEmailSender,
+  type EmailAttachment,
+  type EmailSender,
+} from "@/lib/email/port";
+import {
+  parseInvoiceSnapshot,
+  type InvoiceSnapshot,
+} from "@/lib/domain/invoice-snapshot";
+import { appBaseUrl } from "@/lib/config";
 
 /**
  * Invoice lifecycle (brief §104, ARCHITECTURE.md §8 slice 2).
@@ -790,4 +804,296 @@ export async function issuedThisMonth(
       ),
     );
   return row?.count ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// slice 3: hosted view, PDF data, send
+
+/**
+ * Public lookup by unguessable token — the token IS the capability, so no
+ * org context (this backs the unauthenticated /i/[token] page). Drafts have
+ * no token and are structurally unreachable; voided documents stay visible
+ * (the page labels them) because a customer may hold the link.
+ */
+export async function getInvoiceByPublicToken(db: Database, token: string) {
+  if (!token || token.length < 20) return null;
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.publicToken, token), isNull(invoices.deletedAt)))
+    .limit(1);
+  if (!invoice || invoice.status === "draft" || !invoice.snapshot) return null;
+  const [sub] = await db
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, invoice.organizationId))
+    .limit(1);
+  return {
+    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    status: invoice.status as InvoiceStatus,
+    amountPaidMinor: invoice.amountPaidMinor ?? 0n,
+    // free-plan documents carry the invoicer footer (brief §4.4)
+    watermark: ((sub?.plan ?? "free") as Plan) === "free",
+  };
+}
+
+/** Snapshot + watermark flag for the authenticated PDF download. */
+export async function getInvoicePdfData(
+  db: Database,
+  organizationId: string,
+  invoiceId: string,
+) {
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.id, invoiceId),
+        eq(invoices.organizationId, organizationId),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!invoice || !invoice.snapshot) return null; // drafts have no document
+  const [sub] = await db
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, organizationId))
+    .limit(1);
+  return {
+    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    status: invoice.status as InvoiceStatus,
+    displayNumber: invoice.displayNumber!,
+    watermark: ((sub?.plan ?? "free") as Plan) === "free",
+  };
+}
+
+/** Statuses whose document may be emailed: issued and not annulled. */
+const SENDABLE: readonly InvoiceStatus[] = ["sent", "partial", "overdue", "paid"];
+
+/** Org-wide cap on invoice emails per hour (brief §6: rate-limit sends). */
+const SEND_HOURLY_CAP = 30;
+
+export interface RenderedInvoiceEmail {
+  subject: string;
+  text: string;
+  html?: string;
+  attachments?: EmailAttachment[];
+}
+
+/**
+ * Transport injects the rich react-email + PDF builder; the default is
+ * framework-free plain text so this module never imports JSX (the same
+ * pattern as invitations).
+ */
+export type InvoiceEmailBuilder = (params: {
+  snapshot: InvoiceSnapshot;
+  status: InvoiceStatus;
+  publicUrl: string;
+  organizationName: string;
+  watermark: boolean;
+}) => Promise<RenderedInvoiceEmail>;
+
+const plainInvoiceEmail: InvoiceEmailBuilder = async ({
+  snapshot,
+  publicUrl,
+  organizationName,
+}) => ({
+  subject: `Invoice ${snapshot.displayNumber} from ${organizationName}`,
+  text:
+    `${organizationName} sent you invoice ${snapshot.displayNumber} for ` +
+    `${Money.fromMinor(BigInt(snapshot.totals.totalMinor), snapshot.currency).toString()}, ` +
+    `due ${snapshot.dueDate}.\n\nView it online: ${publicUrl}`,
+});
+
+export interface SendInvoiceDeps {
+  emailSender?: EmailSender;
+  baseUrl?: string;
+  buildEmail?: InvoiceEmailBuilder;
+}
+
+export async function sendInvoice(
+  db: Database,
+  ctx: ActorContext,
+  input: SendInvoiceInput,
+  deps: SendInvoiceDeps = {},
+): Promise<{ recipients: string[] }> {
+  const data = sendInvoiceSchema.parse(input);
+  if (!ctx.actorId) throw new PermissionError("invoice.send");
+  const emailSender = deps.emailSender ?? getEmailSender();
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  const buildEmail = deps.buildEmail ?? plainInvoiceEmail;
+
+  const prepared = await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "invoice.send");
+
+    // sending-domain reputation gate (brief §6): unverified accounts
+    // cannot put email on the wire
+    const [sender] = await tx
+      .select({ emailVerified: user.emailVerified })
+      .from(user)
+      .where(eq(user.id, ctx.actorId!));
+    if (!sender?.emailVerified) {
+      throw new ValidationError(
+        "Verify your email address before sending invoices",
+      );
+    }
+
+    const invoice = await lockInvoice(tx, ctx.organizationId, data.id);
+    if (!SENDABLE.includes(invoice.status as InvoiceStatus)) {
+      throw new ValidationError(
+        invoice.status === "draft"
+          ? "Issue the invoice before sending it"
+          : "A void invoice cannot be sent",
+      );
+    }
+    const snapshot = parseInvoiceSnapshot(invoice.snapshot);
+
+    // recipients come from the customer's contact persons only
+    const contacts = await tx
+      .select({
+        id: customerContacts.id,
+        firstName: customerContacts.firstName,
+        email: customerContacts.email,
+      })
+      .from(customerContacts)
+      .where(
+        and(
+          eq(customerContacts.organizationId, ctx.organizationId),
+          eq(customerContacts.customerId, invoice.customerId),
+          inArray(customerContacts.id, data.contactIds),
+          isNull(customerContacts.deletedAt),
+        ),
+      );
+    if (contacts.length !== data.contactIds.length) {
+      throw new NotFoundError("Contact person");
+    }
+    const recipients = contacts
+      .map((c) => c.email)
+      .filter((e): e is string => Boolean(e));
+    if (recipients.length === 0) {
+      throw new ValidationError(
+        "None of the selected contact persons has an email address",
+      );
+    }
+
+    // org-wide hourly cap protects the sending domain
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const [recent] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(emailMessages)
+      .where(
+        and(
+          eq(emailMessages.organizationId, ctx.organizationId),
+          eq(emailMessages.type, "invoice_send"),
+          gte(emailMessages.createdAt, hourAgo),
+        ),
+      );
+    if ((recent?.count ?? 0) + recipients.length > SEND_HOURLY_CAP) {
+      throw new ValidationError(
+        "Sending limit reached — try again in a little while",
+      );
+    }
+
+    const [org] = await tx
+      .select({ name: organization.name })
+      .from(organization)
+      .where(eq(organization.id, ctx.organizationId));
+    const [sub] = await tx
+      .select({ plan: subscriptions.plan })
+      .from(subscriptions)
+      .where(eq(subscriptions.organizationId, ctx.organizationId));
+
+    const messageIds = recipients.map(() => newId());
+    await tx.insert(emailMessages).values(
+      recipients.map((recipient, i) => ({
+        id: messageIds[i],
+        organizationId: ctx.organizationId,
+        type: "invoice_send",
+        recipient,
+        subject: `Invoice ${snapshot.displayNumber}`,
+        entityType: "invoice",
+        entityId: invoice.id,
+        status: "queued",
+      })),
+    );
+    await writeAudit(tx, ctx, {
+      action: "invoice.sent",
+      entityType: "invoice",
+      entityId: invoice.id,
+      changes: {
+        after: { recipients, displayNumber: snapshot.displayNumber },
+      },
+    });
+
+    return {
+      snapshot,
+      status: invoice.status as InvoiceStatus,
+      publicToken: invoice.publicToken!,
+      recipients,
+      messageIds,
+      organizationName: org?.name ?? "Your vendor",
+      watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    };
+  });
+
+  // side effects after commit — a failed render/send never rolls back the
+  // audit trail; it lands as send_failed on the log rows
+  let rendered: RenderedInvoiceEmail;
+  try {
+    rendered = await buildEmail({
+      snapshot: prepared.snapshot,
+      status: prepared.status,
+      publicUrl: `${baseUrl}/i/${prepared.publicToken}`,
+      organizationName: prepared.organizationName,
+      watermark: prepared.watermark,
+    });
+  } catch {
+    rendered = await plainInvoiceEmail({
+      snapshot: prepared.snapshot,
+      status: prepared.status,
+      publicUrl: `${baseUrl}/i/${prepared.publicToken}`,
+      organizationName: prepared.organizationName,
+      watermark: prepared.watermark,
+    });
+  }
+  for (let i = 0; i < prepared.recipients.length; i++) {
+    const result = await emailSender
+      .send({ to: prepared.recipients[i], ...rendered })
+      .catch(() => ({ providerMessageId: null }));
+    await db
+      .update(emailMessages)
+      .set({
+        status: result.providerMessageId ? "sent" : "send_failed",
+        providerMessageId: result.providerMessageId,
+      })
+      .where(eq(emailMessages.id, prepared.messageIds[i]));
+  }
+  return { recipients: prepared.recipients };
+}
+
+/** Send history for the workspace Emails tab. */
+export async function listInvoiceEmails(
+  db: Database,
+  organizationId: string,
+  invoiceId: string,
+) {
+  return db
+    .select({
+      id: emailMessages.id,
+      recipient: emailMessages.recipient,
+      subject: emailMessages.subject,
+      status: emailMessages.status,
+      createdAt: emailMessages.createdAt,
+    })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.organizationId, organizationId),
+        eq(emailMessages.entityType, "invoice"),
+        eq(emailMessages.entityId, invoiceId),
+      ),
+    )
+    .orderBy(desc(emailMessages.createdAt));
 }
