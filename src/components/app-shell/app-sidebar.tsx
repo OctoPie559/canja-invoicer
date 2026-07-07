@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
+  Banknote,
   FileText,
   LayoutDashboard,
   Package,
@@ -38,11 +39,23 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const orgRoot = `/orgs/${currentOrgId}`;
-  const items = [
+  const workspaceItems = [
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
-    { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
+  ];
+  // billing documents and money-in live under their own Sales section;
+  // estimates and credit notes join it as their slices land
+  const salesItems = [
+    { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
+    {
+      title: "Payments received",
+      href: `${orgRoot}/payments`,
+      icon: Banknote,
+      // manual payment recording arrives with slice 4 — visible so the
+      // structure is honest about where money-in will live, but inert
+      disabled: true,
+    },
   ];
 
   return (
@@ -62,7 +75,19 @@ export function AppSidebar({
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {workspaceItems.map((item) => (
+                <NavItem key={item.href} item={item} pathname={pathname} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel className="tracking-widest uppercase">
+            Sales
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {salesItems.map((item) => (
                 <NavItem key={item.href} item={item} pathname={pathname} />
               ))}
             </SidebarMenu>
@@ -92,9 +117,31 @@ function NavItem({
   item,
   pathname,
 }: {
-  item: { title: string; href: string; icon: LucideIcon; exact?: boolean };
+  item: {
+    title: string;
+    href: string;
+    icon: LucideIcon;
+    exact?: boolean;
+    disabled?: boolean;
+  };
   pathname: string;
 }) {
+  if (item.disabled) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          disabled
+          className="cursor-default text-muted-foreground opacity-60"
+        >
+          <item.icon />
+          {item.title}
+          <span className="ml-auto text-[10px] tracking-wide uppercase">
+            Soon
+          </span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
   const active = item.exact
     ? pathname === item.href
     : pathname.startsWith(item.href);
