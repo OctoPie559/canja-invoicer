@@ -10,12 +10,14 @@ import { markOverdueInvoices } from "@/lib/services/payments";
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
-  const header = request.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
+  const header = Buffer.from(request.headers.get("authorization") ?? "");
+  const expected = Buffer.from(`Bearer ${secret}`);
+  // compare BYTE lengths — a multibyte header of equal string length would
+  // otherwise make timingSafeEqual throw (500 instead of 401)
   const authorized =
     Boolean(secret) &&
-    header.length === expected.length &&
-    timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+    header.byteLength === expected.byteLength &&
+    timingSafeEqual(header, expected);
   if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
