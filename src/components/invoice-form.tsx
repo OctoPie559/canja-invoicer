@@ -13,6 +13,11 @@ import {
   computeLine,
 } from "@/lib/domain/invoice-math";
 import { Money } from "@/lib/domain/money";
+import {
+  dueDateFor,
+  PAYMENT_TERMS_PRESETS,
+  paymentTermsLabel,
+} from "@/lib/domain/payment-terms";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +49,12 @@ export interface InvoiceFormLine {
 
 export interface InvoiceFormProps {
   organizationId: string;
-  customers: Array<{ id: string; name: string }>;
+  customers: Array<{
+    id: string;
+    name: string;
+    /** the customer's own default terms; null = organization default */
+    paymentTermsDays: number | null;
+  }>;
   products: Array<{
     id: string;
     name: string;
@@ -64,6 +74,7 @@ export interface InvoiceFormProps {
     currency: string;
     issueDate: string | null;
     dueDate: string | null;
+    paymentTermsDays: number | null;
     notes: string | null;
     terms: string | null;
     lines: InvoiceFormLine[];
@@ -94,15 +105,52 @@ export function InvoiceForm({
   invoice,
 }: InvoiceFormProps) {
   const editing = Boolean(invoice);
-  const today = new Date();
-  const defaultDue = new Date(today);
-  defaultDue.setDate(defaultDue.getDate() + defaultPaymentTermsDays);
+  const today = isoDate(new Date());
 
   const [customerId, setCustomerId] = useState(invoice?.customerId ?? "");
   const [currency, setCurrency] = useState(invoice?.currency ?? baseCurrency);
   const [lines, setLines] = useState<InvoiceFormLine[]>(
     invoice?.lines.length ? invoice.lines : [{ ...EMPTY_LINE }],
   );
+  // payment terms drive the due date; "custom" means the due date was set
+  // by hand and travels as-is (paymentTermsDays stays null on the draft)
+  const [termsDays, setTermsDays] = useState<number | "custom">(
+    editing
+      ? (invoice!.paymentTermsDays ?? "custom")
+      : defaultPaymentTermsDays,
+  );
+  const [issueDate, setIssueDate] = useState(invoice?.issueDate ?? today);
+  const [dueDate, setDueDate] = useState(
+    invoice?.dueDate ??
+      dueDateFor(today, invoice?.paymentTermsDays ?? defaultPaymentTermsDays),
+  );
+
+  const applyTerms = (days: number | "custom", fromIssueDate = issueDate) => {
+    setTermsDays(days);
+    if (days !== "custom" && fromIssueDate) {
+      setDueDate(dueDateFor(fromIssueDate, days));
+    }
+  };
+
+  const pickCustomer = (id: string) => {
+    setCustomerId(id);
+    // adopting the customer's own terms is the point of storing them —
+    // but never silently override a hand-picked custom due date
+    const picked = customers.find((c) => c.id === id);
+    if (picked?.paymentTermsDays != null && termsDays !== "custom") {
+      applyTerms(picked.paymentTermsDays);
+    }
+  };
+
+  // offer the org default and the customer's terms even when they aren't
+  // one of the named presets
+  const termsOptions = [
+    ...new Set([
+      ...PAYMENT_TERMS_PRESETS.map((p) => p.days),
+      defaultPaymentTermsDays,
+      ...(typeof termsDays === "number" ? [termsDays] : []),
+    ]),
+  ].sort((a, b) => a - b);
 
   const [state, action, pending] = useActionState<ActionState, FormData>(
     editing
@@ -201,7 +249,7 @@ export function InvoiceForm({
             <Select
               name="customerId"
               value={customerId}
-              onValueChange={setCustomerId}
+              onValueChange={pickCustomer}
               required
             >
               <SelectTrigger id="inv-customer" className="w-full">
@@ -247,7 +295,40 @@ export function InvoiceForm({
               id="inv-issue-date"
               name="issueDate"
               type="date"
-              defaultValue={invoice?.issueDate ?? isoDate(today)}
+              value={issueDate}
+              onChange={(e) => {
+                setIssueDate(e.target.value);
+                if (termsDays !== "custom" && e.target.value) {
+                  setDueDate(dueDateFor(e.target.value, termsDays));
+                }
+              }}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="inv-terms-days">Payment terms</Label>
+            <Select
+              value={termsDays === "custom" ? "custom" : String(termsDays)}
+              onValueChange={(v) =>
+                applyTerms(v === "custom" ? "custom" : Number(v))
+              }
+            >
+              <SelectTrigger id="inv-terms-days" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {termsOptions.map((days) => (
+                  <SelectItem key={days} value={String(days)}>
+                    {paymentTermsLabel(days)}
+                    {days === defaultPaymentTermsDays ? " (default)" : ""}
+                  </SelectItem>
+                ))}
+                <SelectItem value="custom">Custom due date</SelectItem>
+              </SelectContent>
+            </Select>
+            <input
+              type="hidden"
+              name="paymentTermsDays"
+              value={termsDays === "custom" ? "" : termsDays}
             />
           </div>
           <div className="space-y-2">
@@ -256,11 +337,18 @@ export function InvoiceForm({
               id="inv-due-date"
               name="dueDate"
               type="date"
-              defaultValue={invoice?.dueDate ?? isoDate(defaultDue)}
+              value={dueDate}
+              onChange={(e) => {
+                // hand-editing the due date makes the terms "custom"
+                setDueDate(e.target.value);
+                setTermsDays("custom");
+              }}
             />
-            <p className="text-xs text-muted-foreground">
-              Defaults to your {defaultPaymentTermsDays}-day payment terms.
-            </p>
+            {termsDays !== "custom" && (
+              <p className="text-xs text-muted-foreground">
+                {paymentTermsLabel(termsDays)} from the issue date.
+              </p>
+            )}
           </div>
         </div>
       </fieldset>

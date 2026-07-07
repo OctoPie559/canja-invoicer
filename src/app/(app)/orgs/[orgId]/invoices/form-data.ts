@@ -37,7 +37,11 @@ export async function loadInvoiceFormData(
   const rateByTaxId = new Map(taxRates.map((t) => [t.id, t.rateBps]));
 
   return {
-    customers: customers.map((c) => ({ id: c.id, name: c.name })),
+    customers: customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      paymentTermsDays: c.paymentTermsDays,
+    })),
     products: products.map((p) => ({
       id: p.id,
       name: p.name,

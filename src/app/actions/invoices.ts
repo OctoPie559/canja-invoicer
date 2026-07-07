@@ -47,6 +47,7 @@ function draftFields(formData: FormData) {
     currency: String(formData.get("currency") ?? "KES") as never,
     issueDate: String(formData.get("issueDate") ?? ""),
     dueDate: String(formData.get("dueDate") ?? ""),
+    paymentTermsDays: String(formData.get("paymentTermsDays") ?? ""),
     notes: String(formData.get("notes") ?? ""),
     terms: String(formData.get("terms") ?? ""),
     lines: lines as never,

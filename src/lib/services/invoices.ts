@@ -187,6 +187,7 @@ export async function createInvoiceDraft(
       currency: data.currency,
       issueDate: data.issueDate,
       dueDate: data.dueDate,
+      paymentTermsDays: data.paymentTermsDays ?? null,
       subtotalMinor: totals.subtotal.amountMinor,
       discountTotalMinor: totals.discountTotal.amountMinor,
       taxTotalMinor: totals.taxTotal.amountMinor,
@@ -300,6 +301,7 @@ export async function updateInvoiceDraft(
         currency: data.currency,
         issueDate: data.issueDate,
         dueDate: data.dueDate,
+        paymentTermsDays: data.paymentTermsDays ?? null,
         subtotalMinor: totals.subtotal.amountMinor,
         discountTotalMinor: totals.discountTotal.amountMinor,
         taxTotalMinor: totals.taxTotal.amountMinor,
@@ -570,6 +572,7 @@ export async function issueInvoice(
       fxRateToBase: foreign ? data.fxRateToBase : null,
       issueDate: data.issueDate,
       dueDate: data.dueDate,
+      paymentTermsDays: invoice.paymentTermsDays,
       displayNumber,
       // part of the rendered document (slice-3 PDF/public view builds from
       // this snapshot alone), so they freeze with everything else

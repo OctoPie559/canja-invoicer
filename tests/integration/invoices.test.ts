@@ -48,6 +48,7 @@ interface SnapshotShape {
   fxRateToBase: string | null;
   notes: string | null;
   terms: string | null;
+  paymentTermsDays: number | null;
 }
 
 describe("invoices service", () => {
@@ -215,7 +216,7 @@ describe("invoices service", () => {
     const { invoiceId } = await createInvoiceDraft(
       db,
       actorInA(),
-      draftInput({ notes: "Thank you!", terms: "Net 30" }),
+      draftInput({ notes: "Thank you!", terms: "Net 30", paymentTermsDays: 30 }),
     );
     const draft = await getInvoice(db, fx.orgA, invoiceId);
     const { displayNumber } = await issueInvoice(
@@ -241,6 +242,8 @@ describe("invoices service", () => {
     // snapshot alone, so notes/terms freeze with it
     expect(snapshot.notes).toBe("Thank you!");
     expect(snapshot.terms).toBe("Net 30");
+    expect(snapshot.paymentTermsDays).toBe(30);
+    expect(issued!.paymentTermsDays).toBe(30);
 
     const [audit] = await db
       .select()

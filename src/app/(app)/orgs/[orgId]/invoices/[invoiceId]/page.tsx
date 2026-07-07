@@ -9,6 +9,7 @@ import {
   isVoidable,
   type InvoiceStatus,
 } from "@/lib/domain/invoice-status";
+import { paymentTermsLabel } from "@/lib/domain/payment-terms";
 import { getInvoice, getInvoiceTimeline } from "@/lib/services/invoices";
 import { getInvoiceSettings } from "@/lib/services/settings";
 import { requireMembership } from "@/lib/transport/org";
@@ -266,6 +267,12 @@ export default async function InvoiceWorkspacePage({
                       <dt className="text-muted-foreground">Due date</dt>
                       <dd>{invoice.dueDate ?? "—"}</dd>
                     </div>
+                    {invoice.paymentTermsDays !== null && (
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Terms</dt>
+                        <dd>{paymentTermsLabel(invoice.paymentTermsDays)}</dd>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Currency</dt>
                       <dd>{currency}</dd>

@@ -54,6 +54,7 @@ const EDITABLE_FIELDS = [
   "shippingCountry",
   "notes",
   "preferredCurrency",
+  "paymentTermsDays",
 ] as const;
 
 export async function createCustomer(
@@ -148,6 +149,7 @@ export async function updateCustomer(
       shippingCountry: data.shippingCountry ?? null,
       notes: data.notes ?? null,
       preferredCurrency: data.preferredCurrency ?? null,
+      paymentTermsDays: data.paymentTermsDays ?? null,
     };
     const diff = changedFields(current, fields, EDITABLE_FIELDS);
     if (diff.changed.length === 0) return; // nothing to write, nothing to audit

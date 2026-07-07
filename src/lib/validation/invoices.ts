@@ -39,6 +39,14 @@ const draftFields = {
     .regex(ISO_DATE, "Invalid date")
     .nullish()
     .or(z.literal("").transform(() => null)),
+  /** terms behind the due date, in days; null = custom due date */
+  paymentTermsDays: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(365)
+    .nullish()
+    .or(z.literal("").transform(() => null)),
   notes: z
     .string()
     .trim()

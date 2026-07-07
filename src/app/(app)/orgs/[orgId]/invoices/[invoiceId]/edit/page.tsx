@@ -53,6 +53,7 @@ export default async function EditInvoicePage({
               currency: invoice.currency,
               issueDate: invoice.issueDate,
               dueDate: invoice.dueDate,
+              paymentTermsDays: invoice.paymentTermsDays,
               notes: invoice.notes,
               terms: invoice.terms,
               lines: invoice.lines.map((l) => ({

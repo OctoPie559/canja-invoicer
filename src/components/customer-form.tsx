@@ -8,6 +8,7 @@ import {
   createCustomerAction,
   updateCustomerAction,
 } from "@/app/actions/customers";
+import { PAYMENT_TERMS_PRESETS } from "@/lib/domain/payment-terms";
 import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ export interface CustomerFormValues {
   shippingCountry?: string | null;
   notes?: string | null;
   preferredCurrency?: string | null;
+  paymentTermsDays?: number | null;
 }
 
 export interface ContactRowValues {
@@ -318,6 +320,31 @@ export function CustomerForm({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="c-terms">Payment terms</Label>
+              <Select
+                name="paymentTermsDays"
+                defaultValue={
+                  customer?.paymentTermsDays != null
+                    ? String(customer.paymentTermsDays)
+                    : undefined
+                }
+              >
+                <SelectTrigger id="c-terms" className="w-full">
+                  <SelectValue placeholder="Organization default" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_TERMS_PRESETS.map((p) => (
+                    <SelectItem key={p.days} value={String(p.days)}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Prefills the due date on this customer&apos;s invoices.
+              </p>
             </div>
           </div>
 

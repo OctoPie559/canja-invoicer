@@ -71,6 +71,13 @@
       "when": 1783330384030,
       "tag": "0009_product_type",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783411180137,
+      "tag": "0010_payment_terms",
+      "breakpoints": true
     }
   ]
 }
