@@ -71,6 +71,10 @@ export const invoices = pgTable(
     fxRateToBase: numeric("fx_rate_to_base", { precision: 18, scale: 8 }),
     issueDate: date("issue_date"),
     dueDate: date("due_date"),
+    // payment terms behind the due date, in days ("Net 30"); null = a
+    // custom due date was set directly. Recorded so documents/PDFs can
+    // print the terms, not just the date they produced.
+    paymentTermsDays: integer("payment_terms_days"),
     subtotalMinor: moneyMinor("subtotal_minor"),
     discountTotalMinor: moneyMinor("discount_total_minor"),
     taxTotalMinor: moneyMinor("tax_total_minor"),

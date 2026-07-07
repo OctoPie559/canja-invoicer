@@ -6,10 +6,20 @@
 
 type Plain = Record<string, unknown>;
 
+function safeValue(v: unknown): unknown {
+  if (typeof v === "bigint") return v.toString();
+  if (Array.isArray(v)) return v.map(safeValue);
+  if (v !== null && typeof v === "object" && !(v instanceof Date)) {
+    return jsonSafe(v as Plain);
+  }
+  return v;
+}
+
+/** Deep: invoice snapshots nest money inside lines/totals objects. */
 export function jsonSafe(value: Plain): Plain {
   const result: Plain = {};
   for (const [key, v] of Object.entries(value)) {
-    result[key] = typeof v === "bigint" ? v.toString() : v;
+    result[key] = safeValue(v);
   }
   return result;
 }

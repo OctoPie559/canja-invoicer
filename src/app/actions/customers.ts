@@ -46,6 +46,7 @@ function customerFields(formData: FormData) {
     preferredCurrency: String(
       formData.get("preferredCurrency") ?? "",
     ) as CreateCustomerInput["preferredCurrency"],
+    paymentTermsDays: String(formData.get("paymentTermsDays") ?? ""),
   };
 }
 

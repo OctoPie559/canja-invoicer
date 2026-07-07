@@ -32,6 +32,14 @@ const customerFields = {
     .enum(SUPPORTED_CURRENCIES)
     .nullish()
     .or(z.literal("").transform(() => null)),
+  /** default payment terms in days; null = organization default */
+  paymentTermsDays: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(365)
+    .nullish()
+    .or(z.literal("").transform(() => null)),
 };
 
 export const createCustomerSchema = z.object({
