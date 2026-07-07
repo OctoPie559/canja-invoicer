@@ -111,9 +111,9 @@ export interface UploadLogoDeps {
 
 /**
  * Stores the logo in R2 under a content-unique key and records it on the
- * branding row in the same transaction that audits the change. The old
- * object is deleted best-effort after commit (an orphaned object is
- * harmless; a dangling key would not be).
+ * branding row in the same transaction that audits the change. Superseded
+ * objects are never deleted: issued invoices snapshot logoKey and must
+ * render it forever (§5.3).
  */
 export async function uploadBrandingLogo(
   db: Database,
@@ -128,46 +128,67 @@ export async function uploadBrandingLogo(
   if (input.bytes.byteLength === 0 || input.bytes.byteLength > LOGO_MAX_BYTES) {
     throw new ValidationError("Logo must be between 1 byte and 512 KB");
   }
+  // the object lands on a PUBLIC bucket — verify the bytes match the
+  // declared type instead of trusting the client's content type
+  const b = input.bytes;
+  const isPng =
+    b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+  const isJpeg = b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  if (
+    (input.contentType === "image/png" && !isPng) ||
+    (input.contentType === "image/jpeg" && !isJpeg)
+  ) {
+    throw new ValidationError("File content does not match the image type");
+  }
   const storage = deps.storage ?? getFileStorage();
   const ext = input.contentType === "image/png" ? "png" : "jpg";
   const logoKey = `orgs/${ctx.organizationId}/branding/logo-${newId()}.${ext}`;
 
-  // upload FIRST: if storage fails nothing is recorded; if the tx then
-  // fails we leak one orphaned object, which is the safe failure mode
+  // authorization comes BEFORE any side effect: an unauthorized caller
+  // must never place bytes in the org's public prefix
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "branding.update");
+  });
+
   await storage.put({
     key: logoKey,
     body: input.bytes,
     contentType: input.contentType,
   });
 
-  let previousKey: string | null = null;
-  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
-    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
-    authorize(caller.role, "branding.update");
-    const [before] = await tx
-      .select()
-      .from(organizationBranding)
-      .where(eq(organizationBranding.organizationId, ctx.organizationId))
-      .for("update");
-    if (!before) throw new NotFoundError("Organization branding");
-    previousKey = before.logoKey;
-
-    await tx
-      .update(organizationBranding)
-      .set({ logoKey, version: before.version + 1, updatedAt: new Date() })
-      .where(eq(organizationBranding.organizationId, ctx.organizationId));
-    await writeAudit(tx, ctx, {
-      action: "branding.logo_updated",
-      entityType: "organization_branding",
-      entityId: before.id,
-      changes: { before: { logoKey: before.logoKey }, after: { logoKey } },
+  try {
+    await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+      // re-checked inside the recording transaction (role could have
+      // changed between the pre-check and now)
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "branding.update");
+      const [before] = await tx
+        .select()
+        .from(organizationBranding)
+        .where(eq(organizationBranding.organizationId, ctx.organizationId))
+        .for("update");
+      if (!before) throw new NotFoundError("Organization branding");
+      await tx
+        .update(organizationBranding)
+        .set({ logoKey, version: before.version + 1, updatedAt: new Date() })
+        .where(eq(organizationBranding.organizationId, ctx.organizationId));
+      await writeAudit(tx, ctx, {
+        action: "branding.logo_updated",
+        entityType: "organization_branding",
+        entityId: before.id,
+        changes: { before: { logoKey: before.logoKey }, after: { logoKey } },
+      });
     });
-  });
-
-  if (previousKey) {
-    await storage.delete(previousKey).catch(() => {
-      // orphaned object — harmless, R2 lifecycle rules can sweep it
-    });
+  } catch (error) {
+    // the record never landed — remove the just-uploaded object
+    await storage.delete(logoKey).catch(() => {});
+    throw error;
   }
+
+  // the PREVIOUS object is deliberately never deleted: issued invoices
+  // snapshot logoKey and render it forever (§5.3) — destroying the object
+  // would break every historical document. Keys are content-unique, so
+  // superseded logos are just cold storage.
   return { logoKey };
 }

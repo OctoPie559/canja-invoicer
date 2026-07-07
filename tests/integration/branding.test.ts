@@ -17,6 +17,17 @@ import {
 import { createTestDb } from "../helpers/db";
 import { createTwoOrgFixture, type TwoOrgFixture } from "../helpers/fixtures";
 
+function fakePng(size = 100): Uint8Array {
+  const b = new Uint8Array(size);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return b;
+}
+function fakeJpeg(size = 100): Uint8Array {
+  const b = new Uint8Array(size);
+  b.set([0xff, 0xd8, 0xff, 0xe0]);
+  return b;
+}
+
 /** In-memory storage fake implementing the port. */
 function memoryStorage() {
   const objects = new Map<string, { contentType: string; size: number }>();
@@ -97,12 +108,12 @@ describe("branding service (slice 4)", () => {
     ).rejects.toThrow(PermissionError);
   });
 
-  it("uploads a logo, replaces the old object, audits the change", async () => {
+  it("uploads a logo, keeps superseded objects, audits the change", async () => {
     const { objects, storage } = memoryStorage();
     const first = await uploadBrandingLogo(
       db,
       actorInA(),
-      { bytes: new Uint8Array(100), contentType: "image/png" },
+      { bytes: fakePng(), contentType: "image/png" },
       { storage },
     );
     expect(first.logoKey).toMatch(/^orgs\/.+\/branding\/logo-.+\.png$/);
@@ -112,12 +123,13 @@ describe("branding service (slice 4)", () => {
     const second = await uploadBrandingLogo(
       db,
       actorInA(),
-      { bytes: new Uint8Array(200), contentType: "image/jpeg" },
+      { bytes: fakeJpeg(200), contentType: "image/jpeg" },
       { storage },
     );
     expect((await getBranding(db, fx.orgA)).logoKey).toBe(second.logoKey);
-    // the replaced object is cleaned up after commit
-    expect(objects.has(first.logoKey)).toBe(false);
+    // the replaced object is NEVER deleted: issued invoices snapshot the
+    // key and must render it forever (verifier B2 regression)
+    expect(objects.has(first.logoKey)).toBe(true);
     expect(objects.has(second.logoKey)).toBe(true);
 
     const audits = await db
@@ -133,7 +145,7 @@ describe("branding service (slice 4)", () => {
       uploadBrandingLogo(
         db,
         actorInA(),
-        { bytes: new Uint8Array(600 * 1024), contentType: "image/png" },
+        { bytes: fakePng(600 * 1024), contentType: "image/png" },
         { storage },
       ),
     ).rejects.toThrow(ValidationError);
@@ -141,15 +153,24 @@ describe("branding service (slice 4)", () => {
       uploadBrandingLogo(
         db,
         actorInA(),
-        { bytes: new Uint8Array(10), contentType: "image/svg+xml" },
+        { bytes: fakePng(10), contentType: "image/svg+xml" },
         { storage },
       ),
     ).rejects.toThrow(ValidationError);
+    // declared PNG but the bytes are not a PNG
+    await expect(
+      uploadBrandingLogo(
+        db,
+        actorInA(),
+        { bytes: new Uint8Array(64), contentType: "image/png" },
+        { storage },
+      ),
+    ).rejects.toThrow(/does not match/);
     await expect(
       uploadBrandingLogo(
         db,
         bobInA(),
-        { bytes: new Uint8Array(10), contentType: "image/png" },
+        { bytes: fakePng(10), contentType: "image/png" },
         { storage },
       ),
     ).rejects.toThrow(PermissionError);

@@ -28,7 +28,13 @@ export const recordPaymentSchema = z.object({
     .nullish()
     .or(z.literal("").transform(() => null)),
   method: z.enum(PAYMENT_METHODS),
-  paidAt: z.string().regex(ISO_DATE, "Invalid payment date"),
+  paidAt: z
+    .string()
+    .regex(ISO_DATE, "Invalid payment date")
+    .refine(
+      (d) => d >= "2000-01-01" && d <= "2100-12-31",
+      "Payment date out of range",
+    ),
   /** e.g. an M-Pesa confirmation code — kept on the record, masked in logs */
   reference: z
     .string()

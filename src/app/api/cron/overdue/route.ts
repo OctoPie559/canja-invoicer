@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
 import { markOverdueInvoices } from "@/lib/services/payments";
@@ -9,7 +10,13 @@ import { markOverdueInvoices } from "@/lib/services/payments";
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) {
+  const header = request.headers.get("authorization") ?? "";
+  const expected = `Bearer ${secret}`;
+  const authorized =
+    Boolean(secret) &&
+    header.length === expected.length &&
+    timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const today = new Date().toISOString().slice(0, 10);

@@ -121,6 +121,41 @@ describe("payments + overdue cron (slice 4)", () => {
     ).rejects.toThrow(ValidationError);
   });
 
+  it("three installments: partial stays partial until fully covered (B1 regression)", async () => {
+    const invoiceId = await issued();
+    expect(
+      (await recordPayment(db, actorInA(), payment(invoiceId, "300.00"))).invoiceStatus,
+    ).toBe("partial");
+    expect(
+      (await recordPayment(db, actorInA(), payment(invoiceId, "300.00"))).invoiceStatus,
+    ).toBe("partial");
+    expect(
+      (await recordPayment(db, actorInA(), payment(invoiceId, "400.00"))).invoiceStatus,
+    ).toBe("paid");
+    const rows = await listInvoicePayments(db, fx.orgA, invoiceId);
+    expect(rows).toHaveLength(3);
+  });
+
+  it("one manual reference can settle several invoices (M1 regression)", async () => {
+    const a = await issued();
+    const b = await issued();
+    await recordPayment(db, actorInA(), payment(a, "1000.00", { reference: "TRF-2026-001" }));
+    // same reference on a second invoice must NOT collide
+    await recordPayment(db, actorInA(), payment(b, "1000.00", { reference: "TRF-2026-001" }));
+    expect((await getInvoice(db, fx.orgA, b))!.status).toBe("paid");
+  });
+
+  it("over-payment caps the invoice tally at total; delta on the payment row", async () => {
+    const invoiceId = await issued();
+    const res = await recordPayment(db, actorInA(), payment(invoiceId, "1100.00"));
+    expect(res.invoiceStatus).toBe("paid");
+    const inv = await getInvoice(db, fx.orgA, invoiceId);
+    expect(inv!.amountPaidMinor).toBe(100_000n); // capped — balance stays honest
+    const [row] = await listInvoicePayments(db, fx.orgA, invoiceId);
+    expect(row.amountMinor).toBe(110_000n); // received in full on the record
+    expect(row.settlementDeltaMinor).toBe(10_000n);
+  });
+
   it("cross-currency settlement records both sides and the delta", async () => {
     await upgradeToPro(db, fx.orgA);
     const invoiceId = await issued("USD", "129.55"); // USD 1,000.00 total

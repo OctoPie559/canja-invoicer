@@ -84,10 +84,18 @@ export async function recordPayment(
       balanceDueMinor: total - paidBefore,
     });
 
-    const paidAfter =
-      paidBefore + settlement.amountInInvoiceCurrency.amountMinor;
+    // cap the invoice-level tally at the total: the balance stays honest
+    // and any over-payment lives on the payment row's settlementDelta
+    const paidAfter = (() => {
+      const raw = paidBefore + settlement.amountInInvoiceCurrency.amountMinor;
+      return raw > total ? total : raw;
+    })();
     const nextStatus = statusAfterPayment(paidAfter, total);
-    assertTransition(invoice.status as InvoiceStatus, nextStatus);
+    // a third installment keeps a partial invoice partial — the identity
+    // "transition" is legal for payments; assertTransition covers real moves
+    if (invoice.status !== nextStatus) {
+      assertTransition(invoice.status as InvoiceStatus, nextStatus);
+    }
 
     await tx.insert(payments).values({
       id: paymentId,
@@ -101,7 +109,7 @@ export async function recordPayment(
       settlementDeltaMinor: settlement.settlementDelta.amountMinor,
       method: data.method,
       source: "manual",
-      providerTransactionId: data.reference ?? null,
+      reference: data.reference ?? null,
       paidAt: new Date(`${data.paidAt}T00:00:00Z`),
       recordedBy: ctx.actorId,
       notes: data.notes ?? null,
