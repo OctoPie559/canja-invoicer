@@ -56,6 +56,9 @@ export const organizationBranding = pgTable("organization_branding", {
   kraPin: text("kra_pin"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"), // MSISDN — mask in logs, always
+  // built-in PDF layout; non-default choices are Pro (customTemplates).
+  // Frozen into the issue snapshot — switching never re-skins history.
+  pdfTemplate: text("pdf_template").notNull().default("classic"),
   ...timestamps,
   ...softDelete,
   ...optimisticLock,

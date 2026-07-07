@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
-import { organizationBranding } from "@/lib/db/schema";
+import { organizationBranding, subscriptions } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
 import {
   ConflictError,
@@ -22,6 +22,11 @@ import {
   type UpdateBrandingInput,
 } from "@/lib/validation/branding";
 import { getMembership } from "./organizations";
+import { requireEntitlement, type Plan } from "@/lib/authz/entitlements";
+import {
+  isPdfTemplateId,
+  isProTemplate,
+} from "@/lib/domain/pdf-templates";
 
 /**
  * Branding management (brief §109): business details, accent color, and
@@ -191,4 +196,61 @@ export async function uploadBrandingLogo(
   // would break every historical document. Keys are content-unique, so
   // superseded logos are just cold storage.
   return { logoKey };
+}
+
+/**
+ * PDF template selection. Non-default templates are a Pro capability
+ * (customTemplates, brief §4.4) — enforced HERE, server-side, and again at
+ * issue time so a downgraded org's new documents fall back to classic.
+ */
+export async function updatePdfTemplate(
+  db: Database,
+  ctx: ActorContext,
+  input: { template: string },
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("branding.update");
+  const template = String(input.template ?? "");
+  if (!isPdfTemplateId(template)) {
+    throw new ValidationError("Unknown PDF template");
+  }
+
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "branding.update");
+
+    if (isProTemplate(template)) {
+      const [sub] = await tx
+        .select({ plan: subscriptions.plan })
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, ctx.organizationId))
+        .limit(1);
+      requireEntitlement((sub?.plan ?? "free") as Plan, "customTemplates");
+    }
+
+    const [before] = await tx
+      .select()
+      .from(organizationBranding)
+      .where(eq(organizationBranding.organizationId, ctx.organizationId))
+      .for("update");
+    if (!before) throw new NotFoundError("Organization branding");
+    if (before.pdfTemplate === template) return;
+
+    await tx
+      .update(organizationBranding)
+      .set({
+        pdfTemplate: template,
+        version: before.version + 1,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizationBranding.organizationId, ctx.organizationId));
+    await writeAudit(tx, ctx, {
+      action: "branding.template_changed",
+      entityType: "organization_branding",
+      entityId: before.id,
+      changes: {
+        before: { pdfTemplate: before.pdfTemplate },
+        after: { pdfTemplate: template },
+      },
+    });
+  });
 }
