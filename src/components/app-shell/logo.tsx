@@ -10,15 +10,15 @@ export function Logo({ href = "/dashboard" }: { href?: string }) {
         alt="invoicer"
         width={256}
         height={256}
-        className="w-32 h-10 dark:hidden"
+        className="w-28 h-8 dark:hidden"
         priority
       />
       <Image
         src="/logo_assets/logo-grayscale.png"
         alt="invoicer"
-        width={512}
-        height={512}
-        className="hidden h-7 w-auto dark:block"
+        width={256}
+        height={256}
+        className="hidden h-8 w-auto dark:block"
         priority
       />
     </Link>
