@@ -111,3 +111,16 @@ export const voidInvoiceSchema = z.object({
     .max(1000),
 });
 export type VoidInvoiceInput = z.input<typeof voidInvoiceSchema>;
+
+/**
+ * Recipients are chosen from the customer's contact persons — never free
+ * text — so our sending domain can't be used to mail arbitrary addresses.
+ */
+export const sendInvoiceSchema = z.object({
+  id: z.string().min(1),
+  contactIds: z
+    .array(z.string().min(1))
+    .min(1, "Choose at least one recipient")
+    .max(10),
+});
+export type SendInvoiceInput = z.input<typeof sendInvoiceSchema>;

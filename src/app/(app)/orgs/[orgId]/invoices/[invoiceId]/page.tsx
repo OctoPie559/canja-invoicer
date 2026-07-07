@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Pencil } from "lucide-react";
+import { ChevronLeft, Download, Pencil } from "lucide-react";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
@@ -10,7 +10,13 @@ import {
   type InvoiceStatus,
 } from "@/lib/domain/invoice-status";
 import { paymentTermsLabel } from "@/lib/domain/payment-terms";
-import { getInvoice, getInvoiceTimeline } from "@/lib/services/invoices";
+import {
+  getInvoice,
+  getInvoiceTimeline,
+  listInvoiceEmails,
+} from "@/lib/services/invoices";
+import { listContacts } from "@/lib/services/contacts";
+import { contactDisplayName } from "@/lib/format/contact";
 import { getInvoiceSettings } from "@/lib/services/settings";
 import { requireMembership } from "@/lib/transport/org";
 import { deleteInvoiceDraftAction } from "@/app/actions/invoices";
@@ -18,9 +24,11 @@ import { ActivityRoadmap } from "@/components/activity-roadmap";
 import { DeleteButton } from "@/components/delete-button";
 import {
   IssueInvoiceDialog,
+  SendInvoiceDialog,
   VoidInvoiceDialog,
 } from "@/components/invoice-actions";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -96,9 +104,11 @@ export default async function InvoiceWorkspacePage({
 
   const invoice = await getInvoice(db, orgId, invoiceId);
   if (!invoice) notFound();
-  const [timeline, settings] = await Promise.all([
+  const [timeline, settings, emails, contacts] = await Promise.all([
     getInvoiceTimeline(db, orgId, invoiceId),
     getInvoiceSettings(db, orgId),
+    listInvoiceEmails(db, orgId, invoiceId),
+    listContacts(db, orgId, invoice.customerId),
   ]);
 
   const status = invoice.status as InvoiceStatus;
@@ -186,6 +196,26 @@ export default async function InvoiceWorkspacePage({
               )}
             />
           )}
+          {!draft && can(role, "invoice.send") && status !== "void" && (
+            <SendInvoiceDialog
+              organizationId={orgId}
+              invoiceId={invoiceId}
+              displayNumber={invoice.displayNumber ?? "this invoice"}
+              contacts={contacts.map((c) => ({
+                id: c.id,
+                name: contactDisplayName(c),
+                email: c.email,
+              }))}
+            />
+          )}
+          {!draft && (
+            <Button asChild variant="outline" size="sm">
+              <a href={`/orgs/${orgId}/invoices/${invoiceId}/pdf`}>
+                <Download />
+                PDF
+              </a>
+            </Button>
+          )}
           {isVoidable(status) && can(role, "invoice.void") && (
             <VoidInvoiceDialog
               organizationId={orgId}
@@ -200,6 +230,7 @@ export default async function InvoiceWorkspacePage({
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -392,6 +423,51 @@ export default async function InvoiceWorkspacePage({
                     </div>
                   )}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="emails">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                Send history
+              </h3>
+              {emails.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  This invoice has not been emailed yet.
+                </p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {emails.map((e) => (
+                    <li
+                      key={e.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <span>
+                        <span className="font-medium">{e.recipient}</span>{" "}
+                        <span className="text-muted-foreground">
+                          — {e.subject}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <Badge
+                          variant={
+                            e.status === "send_failed"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {e.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {e.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>
