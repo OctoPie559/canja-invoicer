@@ -424,6 +424,16 @@ export async function issueInvoice(
       );
     }
 
+    // the counter lock comes FIRST: it serializes concurrent issues for
+    // this org, which also makes the monthly-cap count below race-free
+    // (two issues at cap-1 would otherwise both pass the check)
+    const [settings] = await tx
+      .select()
+      .from(organizationSettings)
+      .where(eq(organizationSettings.organizationId, ctx.organizationId))
+      .for("update");
+    if (!settings) throw new NotFoundError("Organization settings");
+
     // free-tier monthly cap counts invoices ISSUED this calendar month
     const monthStart = new Date();
     monthStart.setUTCDate(1);
@@ -445,6 +455,7 @@ export async function issueInvoice(
       .where(
         and(
           eq(invoiceLineItems.invoiceId, invoice.id),
+          eq(invoiceLineItems.organizationId, ctx.organizationId),
           isNull(invoiceLineItems.deletedAt),
         ),
       )
@@ -465,14 +476,8 @@ export async function issueInvoice(
       invoice.currency,
     );
 
-    // display number: per-org counter under FOR UPDATE — race-safe by
+    // display number from the counter locked above — race-safe by
     // construction; the partial unique index is the backstop
-    const [settings] = await tx
-      .select()
-      .from(organizationSettings)
-      .where(eq(organizationSettings.organizationId, ctx.organizationId))
-      .for("update");
-    if (!settings) throw new NotFoundError("Organization settings");
     const displayNumber = `${settings.invoicePrefix}-${String(
       settings.invoiceNextNumber,
     ).padStart(6, "0")}`;
@@ -490,7 +495,12 @@ export async function issueInvoice(
     const [customer] = await tx
       .select()
       .from(customers)
-      .where(eq(customers.id, invoice.customerId));
+      .where(
+        and(
+          eq(customers.id, invoice.customerId),
+          eq(customers.organizationId, ctx.organizationId),
+        ),
+      );
     if (!customer) throw new NotFoundError("Customer");
     const [primaryContact] = await tx
       .select({
@@ -561,6 +571,10 @@ export async function issueInvoice(
       issueDate: data.issueDate,
       dueDate: data.dueDate,
       displayNumber,
+      // part of the rendered document (slice-3 PDF/public view builds from
+      // this snapshot alone), so they freeze with everything else
+      notes: invoice.notes,
+      terms: invoice.terms,
     });
 
     await tx

@@ -275,8 +275,10 @@ export default async function InvoiceWorkspacePage({
                         <dt className="text-muted-foreground">
                           Rate to {snapshot.baseCurrency}
                         </dt>
+                        {/* a rate is a ratio, not money — but still never
+                            through Number(): render the stored string */}
                         <dd className="font-mono">
-                          {Number(invoice.fxRateToBase)}
+                          {invoice.fxRateToBase.replace(/\.?0+$/, "")}
                         </dd>
                       </div>
                     )}

@@ -46,6 +46,8 @@ interface SnapshotShape {
   lines: unknown[];
   totals: { totalMinor: string };
   fxRateToBase: string | null;
+  notes: string | null;
+  terms: string | null;
 }
 
 describe("invoices service", () => {
@@ -210,7 +212,11 @@ describe("invoices service", () => {
   // issue — the one-way door
 
   it("issues a draft: display number, frozen totals, snapshot, audit", async () => {
-    const { invoiceId } = await createInvoiceDraft(db, actorInA(), draftInput());
+    const { invoiceId } = await createInvoiceDraft(
+      db,
+      actorInA(),
+      draftInput({ notes: "Thank you!", terms: "Net 30" }),
+    );
     const draft = await getInvoice(db, fx.orgA, invoiceId);
     const { displayNumber } = await issueInvoice(
       db,
@@ -231,6 +237,10 @@ describe("invoices service", () => {
     expect(snapshot.displayNumber).toBe(displayNumber);
     expect(snapshot.lines).toHaveLength(1);
     expect(snapshot.totals.totalMinor).toBe("348000"); // jsonSafe stringifies bigint
+    // the rendered document (slice-3 PDF/public view) builds from the
+    // snapshot alone, so notes/terms freeze with it
+    expect(snapshot.notes).toBe("Thank you!");
+    expect(snapshot.terms).toBe("Net 30");
 
     const [audit] = await db
       .select()
