@@ -69,6 +69,17 @@ import {
 } from "@/lib/domain/invoice-snapshot";
 import { appBaseUrl } from "@/lib/config";
 import { maskPiiInText } from "@/lib/domain/pii";
+import { getFileStorage } from "@/lib/storage/r2";
+
+/** Snapshot logoKey → public URL; null when storage is not configured. */
+function resolveLogoUrl(logoKey: string | null | undefined): string | null {
+  if (!logoKey) return null;
+  try {
+    return getFileStorage().publicUrl(logoKey);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Invoice lifecycle (brief §104, ARCHITECTURE.md §8 slice 2).
@@ -829,12 +840,14 @@ export async function getInvoiceByPublicToken(db: Database, token: string) {
     .from(subscriptions)
     .where(eq(subscriptions.organizationId, invoice.organizationId))
     .limit(1);
+  const snapshot = parseInvoiceSnapshot(invoice.snapshot);
   return {
-    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    snapshot,
     status: invoice.status as InvoiceStatus,
     amountPaidMinor: invoice.amountPaidMinor ?? 0n,
     // free-plan documents carry the invoicer footer (brief §4.4)
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl: resolveLogoUrl(snapshot.branding?.logoKey),
   };
 }
 
@@ -861,11 +874,13 @@ export async function getInvoicePdfData(
     .from(subscriptions)
     .where(eq(subscriptions.organizationId, organizationId))
     .limit(1);
+  const snapshot = parseInvoiceSnapshot(invoice.snapshot);
   return {
-    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    snapshot,
     status: invoice.status as InvoiceStatus,
     displayNumber: invoice.displayNumber!,
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl: resolveLogoUrl(snapshot.branding?.logoKey),
   };
 }
 

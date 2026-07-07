@@ -29,7 +29,7 @@ export default async function PublicInvoicePage({
   const { token } = await params;
   const data = await getInvoiceByPublicToken(getDb(), token);
   if (!data) notFound();
-  const { snapshot, status, amountPaidMinor, watermark } = data;
+  const { snapshot, status, amountPaidMinor, watermark, logoUrl } = data;
 
   const currency = snapshot.currency;
   const fmt = (minor: string) =>
@@ -71,6 +71,14 @@ export default async function PublicInvoicePage({
                 <h3 className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
                   From
                 </h3>
+                {logoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element -- R2-hosted
+                  <img
+                    src={logoUrl}
+                    alt=""
+                    className="mb-1 h-10 w-auto"
+                  />
+                )}
                 <p className="font-medium">
                   {snapshot.branding?.legalName ?? "Your vendor"}
                 </p>

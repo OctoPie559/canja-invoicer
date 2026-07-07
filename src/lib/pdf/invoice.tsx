@@ -5,6 +5,7 @@
 import * as React from "react";
 import {
   Document,
+  Image,
   Page,
   StyleSheet,
   Text,
@@ -141,11 +142,14 @@ export function InvoicePdf({
   snapshot,
   status,
   watermark,
+  logoUrl,
 }: {
   snapshot: InvoiceSnapshot;
   /** printed on annulled documents so a voided PDF can't pass as live */
   status: string;
   watermark: boolean;
+  /** resolved from the snapshot's logoKey at render time (R2 public URL) */
+  logoUrl?: string | null;
 }) {
   const accent = snapshot.branding?.accentColor ?? ACCENT_FALLBACK;
   const currency = snapshot.currency;
@@ -163,6 +167,10 @@ export function InvoicePdf({
 
         <View style={styles.headerRow}>
           <View style={{ maxWidth: 240 }}>
+            {logoUrl && (
+              // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt
+              <Image src={logoUrl} style={{ maxHeight: 42, maxWidth: 160, marginBottom: 8, objectFit: "contain" }} />
+            )}
             <Text style={styles.orgName}>
               {snapshot.branding?.legalName ?? "Your organization"}
             </Text>
@@ -308,6 +316,7 @@ export async function renderInvoicePdf(params: {
   snapshot: InvoiceSnapshot;
   status: string;
   watermark: boolean;
+  logoUrl?: string | null;
 }): Promise<Buffer> {
   return renderToBuffer(<InvoicePdf {...params} />);
 }

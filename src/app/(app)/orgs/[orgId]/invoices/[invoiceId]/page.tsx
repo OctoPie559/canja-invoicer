@@ -15,6 +15,9 @@ import {
   getInvoiceTimeline,
   listInvoiceEmails,
 } from "@/lib/services/invoices";
+import { listInvoicePayments } from "@/lib/services/payments";
+import { isOutstanding } from "@/lib/domain/invoice-status";
+import { RecordPaymentDialog } from "@/components/payment-actions";
 import { listContacts } from "@/lib/services/contacts";
 import { contactDisplayName } from "@/lib/format/contact";
 import { getInvoiceSettings } from "@/lib/services/settings";
@@ -104,12 +107,14 @@ export default async function InvoiceWorkspacePage({
 
   const invoice = await getInvoice(db, orgId, invoiceId);
   if (!invoice) notFound();
-  const [timeline, settings, emails, contacts] = await Promise.all([
-    getInvoiceTimeline(db, orgId, invoiceId),
-    getInvoiceSettings(db, orgId),
-    listInvoiceEmails(db, orgId, invoiceId),
-    listContacts(db, orgId, invoice.customerId),
-  ]);
+  const [timeline, settings, emails, contacts, invoicePayments] =
+    await Promise.all([
+      getInvoiceTimeline(db, orgId, invoiceId),
+      getInvoiceSettings(db, orgId),
+      listInvoiceEmails(db, orgId, invoiceId),
+      listContacts(db, orgId, invoice.customerId),
+      listInvoicePayments(db, orgId, invoiceId),
+    ]);
 
   const status = invoice.status as InvoiceStatus;
   const draft = isEditable(status);
@@ -196,6 +201,15 @@ export default async function InvoiceWorkspacePage({
               )}
             />
           )}
+          {isOutstanding(status) && can(role, "payment.record") && (
+            <RecordPaymentDialog
+              organizationId={orgId}
+              invoiceId={invoiceId}
+              displayNumber={invoice.displayNumber ?? "this invoice"}
+              invoiceCurrency={currency}
+              balanceDue={balance.toString()}
+            />
+          )}
           {!draft && can(role, "invoice.send") && status !== "void" && (
             <SendInvoiceDialog
               organizationId={orgId}
@@ -230,6 +244,7 @@ export default async function InvoiceWorkspacePage({
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
 
@@ -423,6 +438,49 @@ export default async function InvoiceWorkspacePage({
                     </div>
                   )}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payments">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                Payments
+              </h3>
+              {invoicePayments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No payments recorded on this invoice yet.
+                </p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {invoicePayments.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <span>
+                        <span className="font-mono font-medium">
+                          {Money.fromMinor(p.amountMinor ?? 0n, p.currency).toString()}
+                        </span>{" "}
+                        <span className="text-muted-foreground">
+                          via {p.method}
+                          {p.currency !== currency &&
+                            p.amountInInvoiceCurrencyMinor !== null &&
+                            ` — ${Money.fromMinor(p.amountInInvoiceCurrencyMinor, currency).toString()} at ${p.fxRateUsed}`}
+                          {p.settlementDeltaMinor !== null &&
+                            p.settlementDeltaMinor > 0n &&
+                            ` (over-payment ${Money.fromMinor(p.settlementDeltaMinor, currency).toString()})`}
+                        </span>
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {p.paidAt.toISOString().slice(0, 10)}
+                        {p.recordedByName ? ` · ${p.recordedByName}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

@@ -32,8 +32,7 @@ const GROUPS: Array<{ label: string; items: SettingsNavItem[] }> = [
     label: "Organization",
     items: [
       { title: "Profile", segment: "profile", icon: Building2 },
-      // slice 4 ships branding management (logo, accent color, business details)
-      { title: "Branding", segment: "branding", icon: Palette, disabled: true },
+      { title: "Branding", segment: "branding", icon: Palette },
     ],
   },
   {

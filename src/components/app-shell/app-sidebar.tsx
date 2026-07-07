@@ -48,14 +48,7 @@ export function AppSidebar({
   // estimates and credit notes join it as their slices land
   const salesItems = [
     { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
-    {
-      title: "Payments received",
-      href: `${orgRoot}/payments`,
-      icon: Banknote,
-      // manual payment recording arrives with slice 4 — visible so the
-      // structure is honest about where money-in will live, but inert
-      disabled: true,
-    },
+    { title: "Payments received", href: `${orgRoot}/payments`, icon: Banknote },
   ];
 
   return (
