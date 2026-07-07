@@ -68,6 +68,7 @@ import {
   type InvoiceSnapshot,
 } from "@/lib/domain/invoice-snapshot";
 import { appBaseUrl } from "@/lib/config";
+import { maskPiiInText } from "@/lib/domain/pii";
 
 /**
  * Invoice lifecycle (brief §104, ARCHITECTURE.md §8 slice 2).
@@ -1059,16 +1060,32 @@ export async function sendInvoice(
     });
   }
   for (let i = 0; i < prepared.recipients.length; i++) {
-    const result = await emailSender
-      .send({ to: prepared.recipients[i], ...rendered })
-      .catch(() => ({ providerMessageId: null }));
+    let providerMessageId: string | null = null;
+    let sendError: string | null = null;
+    try {
+      ({ providerMessageId } = await emailSender.send({
+        to: prepared.recipients[i],
+        ...rendered,
+      }));
+    } catch (error) {
+      // keep the diagnostic on the log row (masked — never raw PII)
+      sendError = maskPiiInText(
+        error instanceof Error ? error.message : String(error),
+      ).slice(0, 500);
+    }
     await db
       .update(emailMessages)
       .set({
-        status: result.providerMessageId ? "sent" : "send_failed",
-        providerMessageId: result.providerMessageId,
+        status: providerMessageId ? "sent" : "send_failed",
+        providerMessageId,
+        error: sendError,
       })
-      .where(eq(emailMessages.id, prepared.messageIds[i]));
+      .where(
+        and(
+          eq(emailMessages.id, prepared.messageIds[i]),
+          eq(emailMessages.organizationId, ctx.organizationId),
+        ),
+      );
   }
   return { recipients: prepared.recipients };
 }
