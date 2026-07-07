@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
+  FileText,
   LayoutDashboard,
   Package,
   Settings,
@@ -39,6 +40,7 @@ export function AppSidebar({
   const orgRoot = `/orgs/${currentOrgId}`;
   const items = [
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
+    { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
   ];

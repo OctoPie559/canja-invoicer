@@ -5,14 +5,18 @@ import {
   invitation,
   member,
   organization,
-  organizationSettings,
   subscriptions,
   user,
 } from "@/lib/db/schema";
 import { can } from "@/lib/authz/permissions";
+import { getInvoiceSettings, listTaxRates } from "@/lib/services/settings";
 import { requireMembership } from "@/lib/transport/org";
 import { revokeInvitationAction } from "@/app/actions/organizations";
 import { InviteMemberForm } from "@/components/forms";
+import {
+  InvoiceNumberingSettings,
+  TaxRatesSettings,
+} from "@/components/invoice-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,13 +56,10 @@ export default async function OrgSettingsPage({
     .limit(1);
   if (!org) notFound();
 
-  const [[settings], [subscription], members, pendingInvitations] =
+  const [invoiceSettings, taxRates, [subscription], members, pendingInvitations] =
     await Promise.all([
-      db
-        .select({ baseCurrency: organizationSettings.baseCurrency })
-        .from(organizationSettings)
-        .where(eq(organizationSettings.organizationId, orgId))
-        .limit(1),
+      getInvoiceSettings(db, orgId),
+      listTaxRates(db, orgId),
       db
         .select({ plan: subscriptions.plan })
         .from(subscriptions)
@@ -113,9 +114,7 @@ export default async function OrgSettingsPage({
             </div>
             <div>
               <dt className="text-muted-foreground">Base currency</dt>
-              <dd className="font-medium">
-                {settings?.baseCurrency ?? "KES"}
-              </dd>
+              <dd className="font-medium">{invoiceSettings.baseCurrency}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Plan</dt>
@@ -126,6 +125,42 @@ export default async function OrgSettingsPage({
               </dd>
             </div>
           </dl>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-base">
+            Invoice numbering
+          </CardTitle>
+          <CardDescription>
+            The prefix and counter behind sequential display numbers, and the
+            default payment terms for new invoices.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <InvoiceNumberingSettings
+            organizationId={orgId}
+            settings={invoiceSettings}
+            canManage={can(role, "settings.update")}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-base">Tax rates</CardTitle>
+          <CardDescription>
+            Named rates offered on invoice lines. Rates are copied onto lines
+            when you use them, so editing a rate never rewrites history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TaxRatesSettings
+            organizationId={orgId}
+            taxRates={taxRates}
+            canManage={can(role, "tax_rate.manage")}
+          />
         </CardContent>
       </Card>
 
