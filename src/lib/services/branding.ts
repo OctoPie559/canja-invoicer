@@ -13,7 +13,8 @@ import { writeAudit } from "@/lib/audit/write";
 import { changedFields } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
-import { getFileStorage, type FileStorage } from "@/lib/storage/r2";
+import type { FileStorage } from "@/lib/storage/port";
+import { getFileStorage } from "@/lib/storage/r2";
 import {
   LOGO_CONTENT_TYPES,
   LOGO_MAX_BYTES,
