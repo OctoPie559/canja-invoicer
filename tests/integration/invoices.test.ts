@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Database } from "@/lib/db/client";
-import { auditLog, invoiceLineItems, invoices } from "@/lib/db/schema";
+import { auditLog, invoiceLineItems } from "@/lib/db/schema";
 import {
   ConflictError,
   EntitlementError,
@@ -38,6 +38,15 @@ import {
   upgradeToPro,
   type TwoOrgFixture,
 } from "../helpers/fixtures";
+
+/** Shape of the Layer-2 snapshot fields these tests assert on. */
+interface SnapshotShape {
+  customer: { name: string };
+  displayNumber: string;
+  lines: unknown[];
+  totals: { totalMinor: string };
+  fxRateToBase: string | null;
+}
 
 describe("invoices service", () => {
   let db: Database;
@@ -217,7 +226,7 @@ describe("invoices service", () => {
     expect(issued!.publicToken).toBeTruthy();
     expect(issued!.fxRateToBase).toBeNull();
 
-    const snapshot = issued!.snapshot as Record<string, any>;
+    const snapshot = issued!.snapshot as SnapshotShape;
     expect(snapshot.customer.name).toBe("Acme Ltd");
     expect(snapshot.displayNumber).toBe(displayNumber);
     expect(snapshot.lines).toHaveLength(1);
@@ -306,7 +315,7 @@ describe("invoices service", () => {
     });
 
     const issued = await getInvoice(db, fx.orgA, invoiceId);
-    const snapshot = issued!.snapshot as Record<string, any>;
+    const snapshot = issued!.snapshot as SnapshotShape;
     expect(snapshot.customer.name).toBe("Original Name Ltd");
   });
 
@@ -329,7 +338,7 @@ describe("invoices service", () => {
     expect(displayNumber).toBeTruthy();
     const issued = await getInvoice(db, fx.orgA, invoiceId);
     expect(issued!.fxRateToBase).toBe("129.55000000");
-    expect((issued!.snapshot as Record<string, any>).fxRateToBase).toBe("129.55");
+    expect((issued!.snapshot as SnapshotShape).fxRateToBase).toBe("129.55");
 
     // base-currency invoice must NOT take a rate
     const kes = await createInvoiceDraft(db, actorInA(), draftInput());
