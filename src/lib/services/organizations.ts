@@ -502,3 +502,41 @@ export async function listUserOrganizations(
   const roleByOrg = new Map(memberships.map((m) => [m.organizationId, m.role]));
   return orgs.map((o) => ({ ...o, role: roleByOrg.get(o.id) ?? "member" }));
 }
+
+/** Rename the organization — audited like every mutation (settings scope). */
+export async function updateOrganizationName(
+  db: Database,
+  ctx: ActorContext,
+  input: { name: string },
+): Promise<void> {
+  const name = String(input.name ?? "").trim();
+  if (name.length < 2 || name.length > 120) {
+    throw new ValidationError("Organization name must be 2-120 characters");
+  }
+  if (!ctx.actorId) throw new PermissionError("settings.update");
+
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "settings.update");
+
+    const [before] = await tx
+      .select({ name: organization.name })
+      .from(organization)
+      .where(eq(organization.id, ctx.organizationId))
+      .for("update");
+    if (!before) throw new NotFoundError("Organization");
+    if (before.name === name) return;
+
+    // slug is deliberately untouched: it may live in bookmarks/URLs
+    await tx
+      .update(organization)
+      .set({ name })
+      .where(eq(organization.id, ctx.organizationId));
+    await writeAudit(tx, ctx, {
+      action: "organization.updated",
+      entityType: "organization",
+      entityId: ctx.organizationId,
+      changes: { before: { name: before.name }, after: { name } },
+    });
+  });
+}

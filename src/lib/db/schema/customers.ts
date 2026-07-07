@@ -34,6 +34,9 @@ export const customers = pgTable(
     shippingCountry: text("shipping_country"),
     notes: text("notes"),
     preferredCurrency: text("preferred_currency"),
+    // default payment terms for this customer's invoices, in days;
+    // null = use the organization default
+    paymentTermsDays: integer("payment_terms_days"),
     ...timestamps,
     ...softDelete,
     ...optimisticLock,
