@@ -8,7 +8,7 @@ import {
   Banknote,
   FileSpreadsheet,
   FileMinus,
-  FileText,
+  NotebookText,
   LayoutDashboard,
   Package,
   Users,
@@ -56,13 +56,12 @@ export function AppSidebar({
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
-    { title: "Activity", href: `${orgRoot}/activity`, icon: Activity },
   ];
   // billing documents and money-in live under their own Sales section;
   // estimates and credit notes join it as their slices land
   const salesItems = [
-    { title: "Estimates", href: `${orgRoot}/estimates`, icon: FileSpreadsheet },
-    { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
+    { title: "Quotes", href: `${orgRoot}/estimates`, icon: NotebookText },
+    { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileSpreadsheet },
     { title: "Payments received", href: `${orgRoot}/payments`, icon: Banknote },
     { title: "Credit notes", href: `${orgRoot}/credit-notes`, icon: FileMinus },
   ];
