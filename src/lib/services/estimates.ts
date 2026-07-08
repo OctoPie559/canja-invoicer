@@ -37,6 +37,16 @@ import { jsonSafe } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
 import { requireEntitlement, type Plan } from "@/lib/authz/entitlements";
+import { getFileStorage } from "@/lib/storage/r2";
+import {
+  parseInvoiceSnapshot,
+  type InvoiceSnapshot,
+} from "@/lib/domain/invoice-snapshot";
+import {
+  DEFAULT_PDF_TEMPLATE,
+  isPdfTemplateId,
+  type PdfTemplateId,
+} from "@/lib/domain/pdf-templates";
 import { getMembership } from "./organizations";
 import {
   createEstimateDraftSchema,
@@ -785,5 +795,58 @@ export async function getEstimateByPublicToken(db: Database, token: string) {
     snapshot: estimate.snapshot as Record<string, unknown>,
     status: estimate.status as EstimateStatus,
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
+  };
+}
+
+function logoUrlFor(key: string | null | undefined): string | null {
+  if (!key) return null;
+  try {
+    return getFileStorage().publicUrl(key);
+  } catch {
+    return null;
+  }
+}
+
+function templateOf(snapshot: InvoiceSnapshot): PdfTemplateId {
+  return snapshot.pdfTemplate && isPdfTemplateId(snapshot.pdfTemplate)
+    ? snapshot.pdfTemplate
+    : DEFAULT_PDF_TEMPLATE;
+}
+
+/** Snapshot + render params for the estimate PDF (expiry maps to dueDate). */
+export async function getEstimatePdfData(
+  db: Database,
+  organizationId: string,
+  estimateId: string,
+) {
+  const [est] = await db
+    .select()
+    .from(estimates)
+    .where(
+      and(
+        eq(estimates.id, estimateId),
+        eq(estimates.organizationId, organizationId),
+        isNull(estimates.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!est || !est.snapshot) return null;
+  const raw = est.snapshot as Record<string, unknown>;
+  const snapshot = parseInvoiceSnapshot({
+    ...raw,
+    dueDate: (raw as { expiryDate?: string }).expiryDate,
+  });
+  const [sub] = await db
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, organizationId))
+    .limit(1);
+  return {
+    snapshot,
+    status: est.status,
+    displayNumber: est.displayNumber!,
+    watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl: logoUrlFor(snapshot.branding?.logoKey),
+    template: templateOf(snapshot),
   };
 }

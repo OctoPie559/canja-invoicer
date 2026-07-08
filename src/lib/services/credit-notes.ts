@@ -26,6 +26,16 @@ import { jsonSafe } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
 import { getMembership } from "./organizations";
+import { subscriptions } from "@/lib/db/schema";
+import type { Plan } from "@/lib/authz/entitlements";
+import { getFileStorage } from "@/lib/storage/r2";
+import {
+  parseInvoiceSnapshot,
+} from "@/lib/domain/invoice-snapshot";
+import {
+  DEFAULT_PDF_TEMPLATE,
+  isPdfTemplateId,
+} from "@/lib/domain/pdf-templates";
 import {
   createCreditNoteSchema,
   deleteCreditNoteSchema,
@@ -717,4 +727,57 @@ export async function issuedCreditsByInvoice(
     map.set(row.invoiceId, (map.get(row.invoiceId) ?? 0n) + (row.totalMinor ?? 0n));
   }
   return map;
+}
+
+/** Snapshot + render params for the credit-note PDF. */
+export async function getCreditNotePdfData(
+  db: Database,
+  organizationId: string,
+  creditNoteId: string,
+) {
+  const [cn] = await db
+    .select()
+    .from(creditNotes)
+    .where(
+      and(
+        eq(creditNotes.id, creditNoteId),
+        eq(creditNotes.organizationId, organizationId),
+        isNull(creditNotes.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!cn || !cn.snapshot) return null;
+  const raw = cn.snapshot as Record<string, unknown> & {
+    invoice?: { displayNumber?: string };
+    pdfTemplate?: string;
+    branding?: { logoKey?: string | null };
+  };
+  const snapshot = parseInvoiceSnapshot(raw);
+  const [sub] = await db
+    .select({ plan: subscriptions.plan })
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, organizationId))
+    .limit(1);
+  let logoUrl: string | null = null;
+  if (raw.branding?.logoKey) {
+    try {
+      logoUrl = getFileStorage().publicUrl(raw.branding.logoKey);
+    } catch {
+      logoUrl = null;
+    }
+  }
+  return {
+    snapshot,
+    status: cn.status,
+    displayNumber: cn.displayNumber!,
+    reference: raw.invoice?.displayNumber
+      ? `Credits ${raw.invoice.displayNumber}`
+      : null,
+    watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl,
+    template:
+      raw.pdfTemplate && isPdfTemplateId(raw.pdfTemplate)
+        ? raw.pdfTemplate
+        : DEFAULT_PDF_TEMPLATE,
+  };
 }

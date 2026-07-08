@@ -3,7 +3,6 @@ import { listUserOrganizations } from "@/lib/services/organizations";
 import { requireMembership } from "@/lib/transport/org";
 import { requireSession } from "@/lib/transport/session";
 import { AppSidebar } from "@/components/app-shell/app-sidebar";
-import { UserMenu } from "@/components/app-shell/user-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,

@@ -99,7 +99,7 @@ export const invoiceEmail: InvoiceEmailBuilder = async ({
       organizationName={organizationName}
       displayNumber={snapshot.displayNumber}
       total={total}
-      dueDate={snapshot.dueDate}
+      dueDate={snapshot.dueDate ?? snapshot.issueDate}
       url={publicUrl}
       baseUrl={emailAssetBaseUrl()}
     />,
