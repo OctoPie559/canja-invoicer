@@ -16,6 +16,11 @@ import {
   listInvoiceEmails,
 } from "@/lib/services/invoices";
 import { listInvoicePayments } from "@/lib/services/payments";
+import {
+  issuedCreditsForInvoice,
+  listCreditNotes,
+} from "@/lib/services/credit-notes";
+import { DocumentStatusBadge } from "@/components/document-status-badge";
 import { isOutstanding } from "@/lib/domain/invoice-status";
 import { RecordPaymentDialog } from "@/components/payment-actions";
 import { listContacts } from "@/lib/services/contacts";
@@ -107,13 +112,15 @@ export default async function InvoiceWorkspacePage({
 
   const invoice = await getInvoice(db, orgId, invoiceId);
   if (!invoice) notFound();
-  const [timeline, settings, emails, contacts, invoicePayments] =
+  const [timeline, settings, emails, contacts, invoicePayments, credited, invoiceCreditNotes] =
     await Promise.all([
       getInvoiceTimeline(db, orgId, invoiceId),
       getInvoiceSettings(db, orgId),
       listInvoiceEmails(db, orgId, invoiceId),
-      listContacts(db, orgId, invoice.customerId),
+      listContacts(db, orgId, invoiceId ? invoice.customerId : ""),
       listInvoicePayments(db, orgId, invoiceId),
+      issuedCreditsForInvoice(db, orgId, invoiceId, invoice.currency),
+      listCreditNotes(db, orgId, { invoiceId }),
     ]);
 
   const status = invoice.status as InvoiceStatus;
@@ -145,9 +152,10 @@ export default async function InvoiceWorkspacePage({
     Money.fromMinor(BigInt(minor), currency).toString();
 
   const total = Money.fromMinor(BigInt(totals.totalMinor), currency);
-  const balance = total.subtract(
-    Money.fromMinor(invoice.amountPaidMinor ?? 0n, currency),
-  );
+  // effective balance (slice 6): total − cash received − issued credits
+  const balance = total
+    .subtract(Money.fromMinor(invoice.amountPaidMinor ?? 0n, currency))
+    .subtract(credited);
 
   const nextDisplayNumber = `${settings.invoicePrefix}-${String(
     settings.invoiceNextNumber,
@@ -222,6 +230,13 @@ export default async function InvoiceWorkspacePage({
               }))}
             />
           )}
+          {!draft && status !== "void" && can(role, "credit_note.create") && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/orgs/${orgId}/credit-notes/new?invoiceId=${invoiceId}`}>
+                Credit
+              </Link>
+            </Button>
+          )}
           {!draft && (
             <Button asChild variant="outline" size="sm">
               <a href={`/orgs/${orgId}/invoices/${invoiceId}/pdf`}>
@@ -245,6 +260,7 @@ export default async function InvoiceWorkspacePage({
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="credits">Credits</TabsTrigger>
           <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
 
@@ -333,6 +349,12 @@ export default async function InvoiceWorkspacePage({
                         <dd className="font-mono">
                           {invoice.fxRateToBase.replace(/\.?0+$/, "")}
                         </dd>
+                      </div>
+                    )}
+                    {!credited.isZero() && (
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Credited</dt>
+                        <dd className="font-mono">−{credited.toString()}</dd>
                       </div>
                     )}
                     {!draft && status !== "void" && (
@@ -477,6 +499,43 @@ export default async function InvoiceWorkspacePage({
                       <span className="text-xs text-muted-foreground">
                         {p.paidAt.toISOString().slice(0, 10)}
                         {p.recordedByName ? ` · ${p.recordedByName}` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="credits">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                Credit notes
+              </h3>
+              {invoiceCreditNotes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No credit notes against this invoice.
+                </p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {invoiceCreditNotes.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between gap-2 py-2"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Link
+                          href={`/orgs/${orgId}/credit-notes/${c.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {c.displayNumber ?? "Draft"}
+                        </Link>
+                        <DocumentStatusBadge status={c.status} />
+                      </span>
+                      <span className="font-mono">
+                        {Money.fromMinor(c.totalMinor ?? 0n, c.currency).toString()}
                       </span>
                     </li>
                   ))}

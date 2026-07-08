@@ -3,6 +3,7 @@ import { can } from "@/lib/authz/permissions";
 import { getInvoiceSettings, listTaxRates } from "@/lib/services/settings";
 import { requireMembership } from "@/lib/transport/org";
 import {
+  DocNumberingSettings,
   InvoiceDefaultsSettings,
   InvoiceNumberingSettings,
 } from "@/components/invoice-settings";
@@ -45,6 +46,39 @@ export default async function InvoiceSettingsPage({
             settings={settings}
             canManage={canManage}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="font-heading text-base">
+            Estimate & credit-note numbering
+          </CardTitle>
+          <CardDescription>
+            Independent counters for quotes and corrections.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <DocNumberingSettings
+            organizationId={orgId}
+            doc="estimate"
+            label="Estimate"
+            prefix={settings.estimatePrefix}
+            nextNumber={settings.estimateNextNumber}
+            version={settings.version}
+            canManage={canManage}
+          />
+          <div className="border-t pt-4">
+            <DocNumberingSettings
+              organizationId={orgId}
+              doc="credit_note"
+              label="Credit note"
+              prefix={settings.creditNotePrefix}
+              nextNumber={settings.creditNoteNextNumber}
+              version={settings.version}
+              canManage={canManage}
+            />
+          </div>
         </CardContent>
       </Card>
 

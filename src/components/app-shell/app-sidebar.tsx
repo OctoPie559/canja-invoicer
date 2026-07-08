@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Banknote,
+  FileSpreadsheet,
+  FileMinus,
   FileText,
   LayoutDashboard,
   Package,
@@ -57,8 +59,10 @@ export function AppSidebar({
   // billing documents and money-in live under their own Sales section;
   // estimates and credit notes join it as their slices land
   const salesItems = [
+    { title: "Estimates", href: `${orgRoot}/estimates`, icon: FileSpreadsheet },
     { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileText },
     { title: "Payments received", href: `${orgRoot}/payments`, icon: Banknote },
+    { title: "Credit notes", href: `${orgRoot}/credit-notes`, icon: FileMinus },
   ];
 
   return (
