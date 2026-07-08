@@ -61,6 +61,8 @@ export interface InvoiceSnapshot {
   displayNumber: string;
   notes: string | null;
   terms: string | null;
+  /** PDF layout frozen at issue; absent on pre-template documents (classic) */
+  pdfTemplate?: string;
 }
 
 export function parseInvoiceSnapshot(value: unknown): InvoiceSnapshot {

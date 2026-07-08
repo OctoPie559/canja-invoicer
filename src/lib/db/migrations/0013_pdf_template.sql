@@ -1,0 +1,1 @@
+ALTER TABLE "organization_branding" ADD COLUMN "pdf_template" text DEFAULT 'classic' NOT NULL;

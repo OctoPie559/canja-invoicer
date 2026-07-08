@@ -18,6 +18,10 @@ import type {
   InvoiceSnapshot,
   SnapshotLine,
 } from "@/lib/domain/invoice-snapshot";
+import {
+  DEFAULT_PDF_TEMPLATE,
+  type PdfTemplateId,
+} from "@/lib/domain/pdf-templates";
 
 /**
  * Invoice PDF, rendered ONLY from the issue snapshot (brief §5.3): the
@@ -28,21 +32,40 @@ import type {
 
 const ACCENT_FALLBACK = "#103B05";
 
-const styles = StyleSheet.create({
+/** Per-template knobs; structure stays shared, density and header vary. */
+const TEMPLATE_KNOBS: Record<
+  PdfTemplateId,
+  { base: number; pad: number; rowPad: number; title: number; bar: number }
+> = {
+  classic: { base: 9, pad: 48, rowPad: 5, title: 22, bar: 6 },
+  compact: { base: 8, pad: 36, rowPad: 2.5, title: 16, bar: 3 },
+  bold: { base: 9, pad: 48, rowPad: 5, title: 26, bar: 0 },
+};
+
+const makeStyles = (t: PdfTemplateId) => {
+  const k = TEMPLATE_KNOBS[t];
+  return StyleSheet.create({
   page: {
     fontFamily: "Helvetica",
-    fontSize: 9,
+    fontSize: k.base,
     color: "#1a1a1a",
-    paddingTop: 40,
+    paddingTop: t === "bold" ? 0 : 40,
     paddingBottom: 56,
-    paddingHorizontal: 48,
+    paddingHorizontal: 0,
   },
+  body: { paddingHorizontal: k.pad, paddingTop: t === "bold" ? 24 : 0 },
+  boldHeader: {
+    paddingHorizontal: k.pad,
+    paddingVertical: 28,
+    marginBottom: 4,
+  },
+  boldHeaderText: { color: "#ffffff" },
   accentBar: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    height: 6,
+    height: k.bar,
   },
   headerRow: {
     flexDirection: "row",
@@ -52,7 +75,7 @@ const styles = StyleSheet.create({
   orgName: { fontSize: 14, fontFamily: "Helvetica-Bold", marginBottom: 4 },
   muted: { color: "#666666" },
   docTitle: {
-    fontSize: 22,
+    fontSize: k.title,
     fontFamily: "Helvetica-Bold",
     textAlign: "right",
   },
@@ -81,7 +104,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     borderBottomWidth: 0.5,
     borderBottomColor: "#dddddd",
-    paddingVertical: 5,
+    paddingVertical: k.rowPad,
   },
   thText: { fontFamily: "Helvetica-Bold", fontSize: 8 },
   colDesc: { flex: 5 },
@@ -109,13 +132,14 @@ const styles = StyleSheet.create({
   footer: {
     position: "absolute",
     bottom: 24,
-    left: 48,
-    right: 48,
+    left: k.pad,
+    right: k.pad,
     textAlign: "center",
     color: "#999999",
     fontSize: 7,
   },
-});
+  });
+};
 
 function fmt(minor: string, currency: string): string {
   return Money.fromMinor(BigInt(minor), currency).toString();
@@ -143,6 +167,7 @@ export function InvoicePdf({
   status,
   watermark,
   logoUrl,
+  template = DEFAULT_PDF_TEMPLATE,
 }: {
   snapshot: InvoiceSnapshot;
   /** printed on annulled documents so a voided PDF can't pass as live */
@@ -150,10 +175,14 @@ export function InvoicePdf({
   watermark: boolean;
   /** resolved from the snapshot's logoKey at render time (R2 public URL) */
   logoUrl?: string | null;
+  /** frozen into the snapshot at issue; defaults to classic for old docs */
+  template?: PdfTemplateId;
 }) {
+  const styles = makeStyles(template);
   const accent = snapshot.branding?.accentColor ?? ACCENT_FALLBACK;
   const currency = snapshot.currency;
   const discounted = BigInt(snapshot.totals.discountTotalMinor) > 0n;
+  const bold = template === "bold";
 
   return (
     <Document
@@ -163,17 +192,48 @@ export function InvoicePdf({
       producer="invoicer"
     >
       <Page size="A4" style={styles.page}>
-        <View style={[styles.accentBar, { backgroundColor: accent }]} fixed />
+        {!bold && (
+          <View style={[styles.accentBar, { backgroundColor: accent }]} fixed />
+        )}
+        {bold && (
+          <View style={[styles.boldHeader, { backgroundColor: accent }]}>
+            <View style={styles.headerRow}>
+              <View style={{ maxWidth: 260 }}>
+                {logoUrl && (
+                  // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt
+                  <Image
+                    src={logoUrl}
+                    style={{ maxHeight: 48, maxWidth: 180, marginBottom: 8, objectFit: "contain" }}
+                  />
+                )}
+                <Text style={[styles.orgName, styles.boldHeaderText, { fontSize: 16 }]}>
+                  {snapshot.branding?.legalName ?? "Your organization"}
+                </Text>
+              </View>
+              <View>
+                <Text style={[styles.docTitle, styles.boldHeaderText]}>
+                  {status === "void" ? "INVOICE (VOID)" : "INVOICE"}
+                </Text>
+                <Text style={[styles.docNumber, styles.boldHeaderText]}>
+                  {snapshot.displayNumber}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+        <View style={styles.body}>
 
         <View style={styles.headerRow}>
           <View style={{ maxWidth: 240 }}>
-            {logoUrl && (
+            {!bold && logoUrl && (
               // eslint-disable-next-line jsx-a11y/alt-text -- react-pdf Image has no alt
               <Image src={logoUrl} style={{ maxHeight: 42, maxWidth: 160, marginBottom: 8, objectFit: "contain" }} />
             )}
-            <Text style={styles.orgName}>
-              {snapshot.branding?.legalName ?? "Your organization"}
-            </Text>
+            {!bold && (
+              <Text style={styles.orgName}>
+                {snapshot.branding?.legalName ?? "Your organization"}
+              </Text>
+            )}
             {snapshot.branding &&
               addressLines(snapshot.branding).map((line) => (
                 <Text key={line} style={styles.muted}>
@@ -188,10 +248,14 @@ export function InvoicePdf({
             )}
           </View>
           <View>
-            <Text style={styles.docTitle}>
-              {status === "void" ? "INVOICE (VOID)" : "INVOICE"}
-            </Text>
-            <Text style={styles.docNumber}>{snapshot.displayNumber}</Text>
+            {!bold && (
+              <>
+                <Text style={styles.docTitle}>
+                  {status === "void" ? "INVOICE (VOID)" : "INVOICE"}
+                </Text>
+                <Text style={styles.docNumber}>{snapshot.displayNumber}</Text>
+              </>
+            )}
             <View style={styles.metaBlock}>
               <View style={styles.metaLine}>
                 <Text style={styles.metaLabel}>Issue date</Text>
@@ -301,6 +365,8 @@ export function InvoicePdf({
           </View>
         )}
 
+        </View>
+
         {watermark && (
           <Text style={styles.footer} fixed>
             Created with invoicer — professional invoicing for Kenyan
@@ -317,6 +383,7 @@ export async function renderInvoicePdf(params: {
   status: string;
   watermark: boolean;
   logoUrl?: string | null;
+  template?: PdfTemplateId;
 }): Promise<Buffer> {
   return renderToBuffer(<InvoicePdf {...params} />);
 }

@@ -12,10 +12,24 @@ import type { FileStorage, StoredFile } from "@/lib/storage/port";
 import {
   getBranding,
   updateBranding,
+  updatePdfTemplate,
   uploadBrandingLogo,
 } from "@/lib/services/branding";
+import { EntitlementError } from "@/lib/domain/errors";
+import {
+  createInvoiceDraft,
+  getInvoice,
+  getInvoicePdfData,
+  issueInvoice,
+} from "@/lib/services/invoices";
+import { createCustomer } from "@/lib/services/customers";
 import { createTestDb } from "../helpers/db";
-import { createTwoOrgFixture, type TwoOrgFixture } from "../helpers/fixtures";
+import {
+  createTwoOrgFixture,
+  setPlan,
+  upgradeToPro,
+  type TwoOrgFixture,
+} from "../helpers/fixtures";
 
 function fakePng(size = 100): Uint8Array {
   const b = new Uint8Array(size);
@@ -137,6 +151,54 @@ describe("branding service (slice 4)", () => {
       .from(auditLog)
       .where(eq(auditLog.action, "branding.logo_updated"));
     expect(audits.length).toBe(2);
+  });
+
+  it("PDF templates: pro-gated selection, frozen at issue, downgrade falls back", async () => {
+    // free org: classic is fine, pro templates are gated
+    let b = await getBranding(db, fx.orgA);
+    await updatePdfTemplate(db, actorInA(), { template: "classic" });
+    await expect(
+      updatePdfTemplate(db, actorInA(), { template: "bold" }),
+    ).rejects.toThrow(EntitlementError);
+    await expect(
+      updatePdfTemplate(db, actorInA(), { template: "fancy-nonsense" }),
+    ).rejects.toThrow(/Unknown PDF template/);
+
+    // pro org selects bold; issued documents freeze it
+    await upgradeToPro(db, fx.orgA);
+    await updatePdfTemplate(db, actorInA(), { template: "bold" });
+    b = await getBranding(db, fx.orgA);
+    expect(b.pdfTemplate).toBe("bold");
+
+    const { customerId } = await createCustomer(db, actorInA(), {
+      name: "Tmpl Customer",
+    });
+    const issueOne = async () => {
+      const { invoiceId } = await createInvoiceDraft(db, actorInA(), {
+        customerId,
+        currency: "KES",
+        lines: [
+          { description: "W", quantity: "1", unitPrice: "100.00", discountBps: 0, taxRateBps: 0 },
+        ],
+      });
+      const d = await getInvoice(db, fx.orgA, invoiceId);
+      await issueInvoice(db, actorInA(), {
+        id: invoiceId,
+        version: d!.version,
+        issueDate: "2026-07-07",
+        dueDate: "2026-08-06",
+      });
+      return invoiceId;
+    };
+
+    const boldInvoice = await issueOne();
+    expect((await getInvoicePdfData(db, fx.orgA, boldInvoice))!.template).toBe("bold");
+
+    // downgrade: NEW documents fall back to classic; the issued one keeps bold
+    await setPlan(db, fx.orgA, "free");
+    const afterDowngrade = await issueOne();
+    expect((await getInvoicePdfData(db, fx.orgA, afterDowngrade))!.template).toBe("classic");
+    expect((await getInvoicePdfData(db, fx.orgA, boldInvoice))!.template).toBe("bold");
   });
 
   it("rejects oversized files, wrong types, and non-members", async () => {

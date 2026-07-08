@@ -183,13 +183,22 @@ async function main() {
     b.toString("latin1")
       .replace(/\/CreationDate \(D:[^)]*\)/g, "/CreationDate (D:0)")
       .replace(/\/ID \[[^\]]*\]/g, "/ID []");
-  const pdf1 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true });
-  const pdf2 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true });
-  const stable = strip(pdf1) === strip(pdf2) && pdf1.length > 2000;
-  console.log(
-    `${stable ? "PASS" : "FAIL"} invoice pdf (bytes ${pdf1.length}, stable ${strip(pdf1) === strip(pdf2)})`,
-  );
-  if (!stable) failed = true;
+  const outputs: string[] = [];
+  for (const template of ["classic", "compact", "bold"] as const) {
+    const pdf1 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true, template });
+    const pdf2 = await renderInvoicePdf({ snapshot, status: "sent", watermark: true, template });
+    const stable = strip(pdf1) === strip(pdf2) && pdf1.length > 2000;
+    console.log(
+      `${stable ? "PASS" : "FAIL"} invoice pdf [${template}] (bytes ${pdf1.length})`,
+    );
+    if (!stable) failed = true;
+    outputs.push(strip(pdf1));
+  }
+  // the templates must actually differ from each other
+  if (new Set(outputs).size !== outputs.length) {
+    console.log("FAIL pdf templates render identically");
+    failed = true;
+  }
 
   if (failed) {
     console.error("\nEmail render check FAILED");
