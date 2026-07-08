@@ -23,6 +23,9 @@ import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
 import { requireEntitlement, type Plan } from "@/lib/authz/entitlements";
 import { getMembership } from "./organizations";
+import type { FileStorage } from "@/lib/storage/port";
+import { getFileStorage } from "@/lib/storage/r2";
+import { assertImageUpload, imageExtension } from "@/lib/storage/images";
 import {
   createProductSchema,
   deleteProductSchema,
@@ -385,4 +388,171 @@ export async function getProductTimeline(
     )
     .orderBy(desc(auditLog.createdAt))
     .limit(limit);
+}
+
+export interface ProductImageDeps {
+  storage?: FileStorage;
+}
+
+/**
+ * Catalog image. Referenced only by the live row (invoice snapshots carry
+ * line descriptions, never product images), so the superseded object is
+ * deleted after commit — same semantics as contact photos, the opposite of
+ * snapshot-referenced branding logos.
+ */
+export async function uploadProductImage(
+  db: Database,
+  ctx: ActorContext,
+  input: { productId: string; bytes: Uint8Array; contentType: string },
+  deps: ProductImageDeps = {},
+): Promise<{ imageKey: string }> {
+  if (!ctx.actorId) throw new PermissionError("product.update");
+  assertImageUpload(input.bytes, input.contentType);
+  const storage = deps.storage ?? getFileStorage();
+  const imageKey = `orgs/${ctx.organizationId}/products/${input.productId}/image-${newId()}.${imageExtension(input.contentType as never)}`;
+
+  // authorization and existence BEFORE the storage side effect
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "product.update");
+    const [row] = await tx
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.id, input.productId),
+          eq(products.organizationId, ctx.organizationId),
+          isNull(products.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundError("Product");
+  });
+
+  await storage.put({
+    key: imageKey,
+    body: input.bytes,
+    contentType: input.contentType,
+  });
+
+  let previousKey: string | null = null;
+  try {
+    await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "product.update");
+      const [before] = await tx
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.id, input.productId),
+            eq(products.organizationId, ctx.organizationId),
+            isNull(products.deletedAt),
+          ),
+        )
+        .for("update");
+      if (!before) throw new NotFoundError("Product");
+      previousKey = before.imageKey;
+
+      await tx
+        .update(products)
+        .set({ imageKey, version: before.version + 1, updatedAt: new Date() })
+        .where(eq(products.id, input.productId));
+      const [after] = await tx
+        .select()
+        .from(products)
+        .where(eq(products.id, input.productId));
+      await tx.insert(productVersions).values({
+        id: newId(),
+        organizationId: ctx.organizationId,
+        productId: input.productId,
+        version: after.version,
+        data: jsonSafe(after),
+        changedBy: ctx.actorId,
+      });
+      await writeAudit(tx, ctx, {
+        action: "product.image_updated",
+        entityType: "product",
+        entityId: input.productId,
+        changes: { before: { imageKey: before.imageKey }, after: { imageKey } },
+      });
+    });
+  } catch (error) {
+    await storage.delete(imageKey).catch(() => {});
+    throw error;
+  }
+
+  if (previousKey) {
+    await storage.delete(previousKey).catch(() => {});
+  }
+  return { imageKey };
+}
+
+export async function removeProductImage(
+  db: Database,
+  ctx: ActorContext,
+  input: { productId: string },
+  deps: ProductImageDeps = {},
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("product.update");
+  const storage = deps.storage ?? getFileStorage();
+
+  let key: string | null = null;
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "product.update");
+    const [before] = await tx
+      .select()
+      .from(products)
+      .where(
+        and(
+          eq(products.id, input.productId),
+          eq(products.organizationId, ctx.organizationId),
+          isNull(products.deletedAt),
+        ),
+      )
+      .for("update");
+    if (!before) throw new NotFoundError("Product");
+    if (!before.imageKey) return;
+    key = before.imageKey;
+
+    await tx
+      .update(products)
+      .set({ imageKey: null, version: before.version + 1, updatedAt: new Date() })
+      .where(eq(products.id, input.productId));
+    const [after] = await tx
+      .select()
+      .from(products)
+      .where(eq(products.id, input.productId));
+    await tx.insert(productVersions).values({
+      id: newId(),
+      organizationId: ctx.organizationId,
+      productId: input.productId,
+      version: after.version,
+      data: jsonSafe(after),
+      changedBy: ctx.actorId,
+    });
+    await writeAudit(tx, ctx, {
+      action: "product.image_removed",
+      entityType: "product",
+      entityId: input.productId,
+      changes: { before: { imageKey: key }, after: { imageKey: null } },
+    });
+  });
+
+  if (key) {
+    await storage.delete(key).catch(() => {});
+  }
+}
+
+/** imageKey → public URL; null when storage is not configured. */
+export function productImageUrl(
+  imageKey: string | null | undefined,
+): string | null {
+  if (!imageKey) return null;
+  try {
+    return getFileStorage().publicUrl(imageKey);
+  } catch {
+    return null;
+  }
 }

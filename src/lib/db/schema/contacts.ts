@@ -33,6 +33,8 @@ export const customerContacts = pgTable(
     workPhone: text("work_phone"),
     mobile: text("mobile"),
     designation: text("designation"),
+    // R2 object key for the profile photo; public URL resolved at read time
+    photoKey: text("photo_key"),
     department: text("department"),
     isPrimary: boolean("is_primary").notNull().default(false),
     ...timestamps,

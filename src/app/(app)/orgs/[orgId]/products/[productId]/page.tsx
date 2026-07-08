@@ -9,7 +9,9 @@ import {
   getProductTimeline,
   getProductTransactions,
   getProductVersions,
+  productImageUrl,
 } from "@/lib/services/products";
+import { ProductImage } from "@/components/product-image";
 import { requireMembership } from "@/lib/transport/org";
 import { deleteProductAction } from "@/app/actions/products";
 import { ActivityRoadmap } from "@/components/activity-roadmap";
@@ -107,6 +109,13 @@ export default async function ProductWorkspacePage({
                   <h3 className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
                     Item information
                   </h3>
+                  <ProductImage
+                    organizationId={orgId}
+                    productId={productId}
+                    productName={product.name}
+                    imageUrl={productImageUrl(product.imageKey)}
+                    canEdit={can(role, "product.update")}
+                  />
                   <dl className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Type</dt>

@@ -16,11 +16,13 @@ import { authorize } from "@/lib/authz/permissions";
 import type { FileStorage } from "@/lib/storage/port";
 import { getFileStorage } from "@/lib/storage/r2";
 import {
-  LOGO_CONTENT_TYPES,
-  LOGO_MAX_BYTES,
   updateBrandingSchema,
   type UpdateBrandingInput,
 } from "@/lib/validation/branding";
+import {
+  assertImageUpload,
+  imageExtension,
+} from "@/lib/storage/images";
 import { getMembership } from "./organizations";
 import { requireEntitlement, type Plan } from "@/lib/authz/entitlements";
 import {
@@ -127,26 +129,9 @@ export async function uploadBrandingLogo(
   deps: UploadLogoDeps = {},
 ): Promise<{ logoKey: string }> {
   if (!ctx.actorId) throw new PermissionError("branding.update");
-  if (!(LOGO_CONTENT_TYPES as readonly string[]).includes(input.contentType)) {
-    throw new ValidationError("Logo must be a PNG or JPEG image");
-  }
-  if (input.bytes.byteLength === 0 || input.bytes.byteLength > LOGO_MAX_BYTES) {
-    throw new ValidationError("Logo must be between 1 byte and 512 KB");
-  }
-  // the object lands on a PUBLIC bucket — verify the bytes match the
-  // declared type instead of trusting the client's content type
-  const b = input.bytes;
-  const isPng =
-    b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
-  const isJpeg = b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-  if (
-    (input.contentType === "image/png" && !isPng) ||
-    (input.contentType === "image/jpeg" && !isJpeg)
-  ) {
-    throw new ValidationError("File content does not match the image type");
-  }
+  assertImageUpload(input.bytes, input.contentType);
   const storage = deps.storage ?? getFileStorage();
-  const ext = input.contentType === "image/png" ? "png" : "jpg";
+  const ext = imageExtension(input.contentType as never);
   const logoKey = `orgs/${ctx.organizationId}/branding/logo-${newId()}.${ext}`;
 
   // authorization comes BEFORE any side effect: an unauthorized caller

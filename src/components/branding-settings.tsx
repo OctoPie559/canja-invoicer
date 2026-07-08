@@ -8,6 +8,7 @@ import {
   uploadLogoAction,
 } from "@/app/actions/branding";
 import type { ActionState } from "@/app/actions/organizations";
+import { validateImageFile } from "@/lib/storage/images";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,12 +41,14 @@ export function BrandingLogoForm({
     uploadLogoAction.bind(null, organizationId),
     { error: null },
   );
+  const [clientError, setClientError] = useState<string | null>(null);
+  const shownError = clientError ?? state.error;
 
   return (
     <form action={action} className="space-y-3">
-      {state.error && (
+      {shownError && (
         <Alert variant="destructive">
-          <AlertDescription>{state.error}</AlertDescription>
+          <AlertDescription>{shownError}</AlertDescription>
         </Alert>
       )}
       <div className="flex items-center gap-4">
@@ -63,8 +66,20 @@ export function BrandingLogoForm({
           </div>
         )}
         <div className="space-y-2">
-          <Input type="file" name="logo" accept="image/png,image/jpeg" required />
-          <Button type="submit" size="sm" disabled={pending}>
+          <Input
+            type="file"
+            name="logo"
+            accept="image/png,image/jpeg"
+            required
+            onChange={(e) =>
+              setClientError(validateImageFile(e.target.files?.[0] ?? null))
+            }
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={pending || clientError !== null}
+          >
             <Upload />
             {pending ? "Uploading…" : "Upload logo"}
           </Button>

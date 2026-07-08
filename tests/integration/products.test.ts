@@ -19,8 +19,12 @@ import {
   getProductVersions,
   listProducts,
   listUnitLabels,
+  removeProductImage,
   updateProduct,
+  uploadProductImage,
 } from "@/lib/services/products";
+import { ValidationError } from "@/lib/domain/errors";
+import type { FileStorage, StoredFile } from "@/lib/storage/port";
 import { newId } from "@/lib/domain/ids";
 import { createTestDb } from "../helpers/db";
 import {
@@ -347,5 +351,76 @@ describe("products service", () => {
     expect(timeline.map((t) => t.action)).toContain("product.deleted");
     const versions = await getProductVersions(db, fx.orgA, productId);
     expect(versions.length).toBe(2);
+  });
+
+  it("catalog images: upload/replace deletes old object, remove clears, versioned", async () => {
+    const objects = new Map<string, number>();
+    const storage: FileStorage = {
+      async put(p): Promise<StoredFile> {
+        objects.set(p.key, p.body.byteLength);
+        return { key: p.key, publicUrl: `https://assets.test/${p.key}` };
+      },
+      async delete(key) {
+        objects.delete(key);
+      },
+      publicUrl: (key) => `https://assets.test/${key}`,
+    };
+    const png = () => {
+      const b = new Uint8Array(64);
+      b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      return b;
+    };
+    const { productId } = await createProduct(db, actorInA(), {
+      name: "Pictured Product",
+      unitPrice: "100.00",
+      currency: "KES",
+    });
+
+    const first = await uploadProductImage(
+      db,
+      actorInA(),
+      { productId, bytes: png(), contentType: "image/png" },
+      { storage },
+    );
+    expect((await getProduct(db, fx.orgA, productId))!.imageKey).toBe(first.imageKey);
+
+    const second = await uploadProductImage(
+      db,
+      actorInA(),
+      { productId, bytes: png(), contentType: "image/png" },
+      { storage },
+    );
+    // catalog images are live-row-only — the superseded object is deleted
+    expect(objects.has(first.imageKey)).toBe(false);
+    expect(objects.has(second.imageKey)).toBe(true);
+
+    await removeProductImage(db, actorInA(), { productId }, { storage });
+    expect((await getProduct(db, fx.orgA, productId))!.imageKey).toBeNull();
+    expect(objects.size).toBe(0);
+
+    // every image change wrote a version-history row
+    const versions = await getProductVersions(db, fx.orgA, productId);
+    expect(versions.length).toBeGreaterThanOrEqual(4); // create + 2 uploads + remove
+
+    // mismatched bytes never reach storage
+    await expect(
+      uploadProductImage(
+        db,
+        actorInA(),
+        { productId, bytes: new Uint8Array(32), contentType: "image/png" },
+        { storage },
+      ),
+    ).rejects.toThrow(ValidationError);
+    expect(objects.size).toBe(0);
+
+    // org B cannot touch org A's product image
+    await expect(
+      uploadProductImage(
+        db,
+        actorInB(),
+        { productId, bytes: png(), contentType: "image/png" },
+        { storage },
+      ),
+    ).rejects.toThrow(NotFoundError);
   });
 });

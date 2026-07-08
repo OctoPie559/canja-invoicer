@@ -8,8 +8,12 @@ import { ZodError } from "zod";
 import {
   createProduct,
   deleteProduct,
+  removeProductImage,
   updateProduct,
+  uploadProductImage,
 } from "@/lib/services/products";
+import { StorageNotConfiguredError } from "@/lib/storage/port";
+import { revalidatePath } from "next/cache";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
@@ -95,4 +99,55 @@ export async function deleteProductAction(
     return mapError(error);
   }
   redirect(`/orgs/${organizationId}/products`);
+}
+
+export async function uploadProductImageAction(
+  organizationId: string,
+  productId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  const file = formData.get("image");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Choose an image file" };
+  }
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await runWithActor(ctx, () =>
+      uploadProductImage(getDb(), ctx, {
+        productId,
+        bytes,
+        contentType: file.type,
+      }),
+    );
+  } catch (error) {
+    if (error instanceof StorageNotConfiguredError) {
+      return { error: "File storage is not configured in this environment" };
+    }
+    return mapError(error);
+  }
+  revalidatePath(`/orgs/${organizationId}/products/${productId}`);
+  return { error: null };
+}
+
+export async function removeProductImageAction(
+  organizationId: string,
+  productId: string,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      removeProductImage(getDb(), ctx, { productId }),
+    );
+  } catch (error) {
+    if (error instanceof StorageNotConfiguredError) {
+      return { error: "File storage is not configured in this environment" };
+    }
+    return mapError(error);
+  }
+  revalidatePath(`/orgs/${organizationId}/products/${productId}`);
+  return { error: null };
 }

@@ -1,16 +1,21 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Camera, Pencil, Plus, Trash2 } from "lucide-react";
 import type { ActionState } from "@/app/actions/organizations";
 import {
   createContactAction,
   deleteContactAction,
   updateContactAction,
 } from "@/app/actions/contacts";
+import { validateImageFile } from "@/lib/storage/images";
+import {
+  removeContactPhotoAction,
+  uploadContactPhotoAction,
+} from "@/app/actions/contacts";
 import { contactDisplayName } from "@/lib/format/contact";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +50,8 @@ export interface ContactView {
   designation: string | null;
   department: string | null;
   isPrimary: boolean;
+  /** resolved public URL; null = no photo or storage unconfigured */
+  photoUrl?: string | null;
 }
 
 
@@ -208,6 +215,12 @@ export function ContactPersons({
           {contacts.map((contact) => (
             <li key={contact.id} className="flex items-start gap-3">
               <Avatar className="size-8">
+                {contact.photoUrl && (
+                  <AvatarImage
+                    src={contact.photoUrl}
+                    alt={contactDisplayName(contact)}
+                  />
+                )}
                 <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
                   {contact.firstName[0]?.toUpperCase()}
                 </AvatarFallback>
@@ -237,6 +250,11 @@ export function ContactPersons({
               </div>
               {canEdit && (
                 <span className="flex shrink-0 items-center gap-1">
+                  <ContactPhotoDialog
+                    organizationId={organizationId}
+                    customerId={customerId}
+                    contact={contact}
+                  />
                   <ContactDialog
                     organizationId={organizationId}
                     customerId={customerId}
@@ -275,5 +293,132 @@ export function ContactPersons({
         </ul>
       )}
     </div>
+  );
+}
+
+function ContactPhotoDialog({
+  organizationId,
+  customerId,
+  contact,
+}: {
+  organizationId: string;
+  customerId: string;
+  contact: ContactView;
+}) {
+  const [open, setOpen] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const boundUpload = uploadContactPhotoAction.bind(
+    null,
+    organizationId,
+    customerId,
+    contact.id,
+  );
+  const [state, action, pending] = useActionState(
+    // same close-on-success wrapper as ContactDialog above
+    async (prev: ActionState, formData: FormData) => {
+      const result = await boundUpload(prev, formData);
+      if (!result.error) setOpen(false);
+      return result;
+    },
+    initialState,
+  );
+  const shownError = clientError ?? state.error;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        setClientError(null);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon-xs" aria-label="Profile photo">
+          <Camera />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <form action={action} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>
+              Photo — {contactDisplayName(contact)}
+            </DialogTitle>
+          </DialogHeader>
+          {shownError && (
+            <Alert variant="destructive">
+              <AlertDescription>{shownError}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex items-center gap-4">
+            <Avatar className="size-16">
+              {contact.photoUrl && (
+                <AvatarImage
+                  src={contact.photoUrl}
+                  alt={contactDisplayName(contact)}
+                />
+              )}
+              <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">
+                {contact.firstName[0]?.toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="space-y-2">
+              <Input
+                type="file"
+                name="photo"
+                accept="image/png,image/jpeg"
+                required
+                onChange={(e) =>
+                  setClientError(
+                    validateImageFile(e.target.files?.[0] ?? null),
+                  )
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                PNG or JPEG, up to 512 KB.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            {contact.photoUrl ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={async () => {
+                  await removeContactPhotoAction(
+                    organizationId,
+                    customerId,
+                    contact.id,
+                  );
+                  setOpen(false);
+                }}
+              >
+                Remove photo
+              </Button>
+            ) : (
+              <span />
+            )}
+            <span className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={pending || clientError !== null}
+              >
+                {pending ? "Uploading…" : "Upload"}
+              </Button>
+            </span>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
