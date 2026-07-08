@@ -27,6 +27,7 @@ import { recordPayment } from "@/lib/services/payments";
 import { getFinancialOverview } from "@/lib/services/reporting";
 import { createCustomer } from "@/lib/services/customers";
 import { createTestDb } from "../helpers/db";
+import { setPlan, upgradeToPro } from "../helpers/fixtures";
 import { createTwoOrgFixture, type TwoOrgFixture } from "../helpers/fixtures";
 
 describe("credit notes (slice 6)", () => {
@@ -231,6 +232,57 @@ describe("credit notes (slice 6)", () => {
     expect(overview.outstanding.amountMinor - before.outstanding.amountMinor).toBe(
       20_000n,
     );
+  });
+
+  it("an issued CN inherits the invoice's FX rate; voided invoices reject issue under lock", async () => {
+    await upgradeToPro(db, fx.orgA);
+    // USD invoice with a rate
+    const { invoiceId } = await createInvoiceDraft(db, actorInA(), {
+      customerId: customerA,
+      currency: "USD",
+      lines: [
+        { description: "W", quantity: "1", unitPrice: "100.00", discountBps: 0, taxRateBps: 0 },
+      ],
+    });
+    const draft = await getInvoice(db, fx.orgA, invoiceId);
+    await issueInvoice(db, actorInA(), {
+      id: invoiceId,
+      version: draft!.version,
+      issueDate: "2026-07-08",
+      dueDate: "2026-08-07",
+      fxRateToBase: "129.55",
+    });
+    const { creditNoteId } = await createCreditNote(db, actorInA(), {
+      invoiceId,
+      lines: cnLines("40.00"),
+    });
+    const cn = await getCreditNote(db, fx.orgA, creditNoteId);
+    await issueCreditNote(db, actorInA(), {
+      id: creditNoteId,
+      version: cn!.version,
+      issueDate: "2026-07-08",
+    });
+    const issued = await getCreditNote(db, fx.orgA, creditNoteId);
+    expect(issued!.fxRateToBase).toBe("129.55000000"); // same rate as its invoice
+    await setPlan(db, fx.orgA, "free");
+
+    // verifier MAJOR-2 regression: a draft CN cannot issue after its
+    // invoice is voided
+    const kesInvoice = await issuedInvoice("300.00");
+    const { creditNoteId: cn2 } = await createCreditNote(db, actorInA(), {
+      invoiceId: kesInvoice,
+      lines: cnLines("100.00"),
+    });
+    const { voidInvoice } = await import("@/lib/services/invoices");
+    await voidInvoice(db, actorInA(), { id: kesInvoice, reason: "cancelled job" });
+    const cn2Row = await getCreditNote(db, fx.orgA, cn2);
+    await expect(
+      issueCreditNote(db, actorInA(), {
+        id: cn2,
+        version: cn2Row!.version,
+        issueDate: "2026-07-08",
+      }),
+    ).rejects.toThrow(/no longer be credited/);
   });
 
   it("drafted/void invoices cannot be credited; org B is isolated", async () => {

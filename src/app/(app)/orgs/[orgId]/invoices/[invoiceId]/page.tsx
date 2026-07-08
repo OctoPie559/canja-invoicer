@@ -117,7 +117,7 @@ export default async function InvoiceWorkspacePage({
       getInvoiceTimeline(db, orgId, invoiceId),
       getInvoiceSettings(db, orgId),
       listInvoiceEmails(db, orgId, invoiceId),
-      listContacts(db, orgId, invoiceId ? invoice.customerId : ""),
+      listContacts(db, orgId, invoice.customerId),
       listInvoicePayments(db, orgId, invoiceId),
       issuedCreditsForInvoice(db, orgId, invoiceId, invoice.currency),
       listCreditNotes(db, orgId, { invoiceId }),
@@ -152,10 +152,15 @@ export default async function InvoiceWorkspacePage({
     Money.fromMinor(BigInt(minor), currency).toString();
 
   const total = Money.fromMinor(BigInt(totals.totalMinor), currency);
-  // effective balance (slice 6): total − cash received − issued credits
-  const balance = total
+  // effective balance (slice 6): total − cash received − issued credits,
+  // clamped at zero to match every report; an over-credit shows separately
+  const rawBalance = total
     .subtract(Money.fromMinor(invoice.amountPaidMinor ?? 0n, currency))
     .subtract(credited);
+  const balance = rawBalance.isNegative()
+    ? Money.fromMinor(0n, currency)
+    : rawBalance;
+  const overCredited = rawBalance.isNegative() ? rawBalance.negate() : null;
 
   const nextDisplayNumber = `${settings.invoicePrefix}-${String(
     settings.invoiceNextNumber,
@@ -361,6 +366,12 @@ export default async function InvoiceWorkspacePage({
                       <div className="flex justify-between border-t pt-1 font-medium">
                         <dt>Balance due</dt>
                         <dd className="font-mono">{balance.toString()}</dd>
+                      </div>
+                    )}
+                    {overCredited && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <dt>Over-credited (refund owed)</dt>
+                        <dd className="font-mono">{overCredited.toString()}</dd>
                       </div>
                     )}
                   </dl>

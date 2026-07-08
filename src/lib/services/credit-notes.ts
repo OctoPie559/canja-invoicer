@@ -388,7 +388,15 @@ export async function issueCreditNote(
       )
       .for("update");
     if (!invoice) throw new NotFoundError("Invoice");
-    // re-check under lock: other credits may have issued since drafting
+    // re-check under lock: the invoice may have been voided (or somehow
+    // regressed) since this credit was drafted — an issued credit against
+    // a void invoice would be an incoherent document set
+    if (invoice.status === "draft" || invoice.status === "void") {
+      throw new ValidationError(
+        `The invoice is ${invoice.status} and can no longer be credited`,
+      );
+    }
+    // ...and other credits may have issued since drafting
     await assertWithinCreditable(
       tx,
       ctx.organizationId,

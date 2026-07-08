@@ -65,3 +65,9 @@ export const estimateDecisionSchema = z.object({
   decision: z.enum(["accepted", "declined", "expired"]),
 });
 export type EstimateDecisionInput = z.input<typeof estimateDecisionSchema>;
+
+export const convertEstimateSchema = z.object({
+  id: z.string().min(1),
+  version: z.coerce.number().int().positive(),
+});
+export type ConvertEstimateInput = z.input<typeof convertEstimateSchema>;

@@ -49,11 +49,13 @@ import {
 } from "@/lib/domain/pdf-templates";
 import { getMembership } from "./organizations";
 import {
+  convertEstimateSchema,
   createEstimateDraftSchema,
   deleteEstimateDraftSchema,
   estimateDecisionSchema,
   issueEstimateSchema,
   updateEstimateDraftSchema,
+  type ConvertEstimateInput,
   type CreateEstimateDraftInput,
   type DeleteEstimateDraftInput,
   type EstimateDecisionInput,
@@ -358,6 +360,13 @@ export async function issueEstimate(
     assertEstimateTransition(estimate.status as EstimateStatus, "sent");
     if (estimate.version !== data.version) throw new ConflictError("Estimate");
 
+    // defense in depth (slice-2 decision): the gate ran at draft time, and
+    // runs again here so a downgraded org cannot issue a foreign draft
+    const orgGate = await getBillingContext(tx, ctx.organizationId);
+    if (estimate.currency !== orgGate.baseCurrency) {
+      requireEntitlement(orgGate.plan, "multiCurrency");
+    }
+
     const [settings] = await tx
       .select()
       .from(organizationSettings)
@@ -562,21 +571,22 @@ export async function recordEstimateDecision(
 export async function convertEstimateToInvoice(
   db: Database,
   ctx: ActorContext,
-  input: { id: string; version: number },
+  input: ConvertEstimateInput,
 ): Promise<{ invoiceId: string }> {
+  const data = convertEstimateSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("estimate.convert");
   const invoiceId = newId();
 
   await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "estimate.convert");
-    const estimate = await lockEstimate(tx, ctx.organizationId, input.id);
+    const estimate = await lockEstimate(tx, ctx.organizationId, data.id);
     if (!isEstimateConvertible(estimate.status as EstimateStatus)) {
       throw new ValidationError(
         "Only an accepted estimate can convert to an invoice",
       );
     }
-    if (estimate.version !== input.version) throw new ConflictError("Estimate");
+    if (estimate.version !== data.version) throw new ConflictError("Estimate");
 
     const lines = await tx
       .select()
