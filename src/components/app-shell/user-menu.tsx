@@ -68,7 +68,7 @@ export function UserMenu({
           <DropdownMenuItem asChild>
             <Link href={settingsHref}>
               <Settings />
-              Organization settings
+              Settings
             </Link>
           </DropdownMenuItem>
         )}

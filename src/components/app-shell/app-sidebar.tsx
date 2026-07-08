@@ -8,7 +8,6 @@ import {
   FileText,
   LayoutDashboard,
   Package,
-  Settings,
   Users,
 } from "lucide-react";
 import { Logo } from "./logo";
@@ -85,20 +84,6 @@ export function AppSidebar({
               {salesItems.map((item) => (
                 <NavItem key={item.href} item={item} pathname={pathname} />
               ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <NavItem
-                item={{
-                  title: "Settings",
-                  href: `${orgRoot}/settings`,
-                  icon: Settings,
-                }}
-                pathname={pathname}
-              />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
