@@ -1,11 +1,13 @@
-import { and, count, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import {
+  auditLog,
   customers,
   invoices,
   organizationSettings,
   payments,
   products,
+  user,
 } from "@/lib/db/schema";
 import { Money } from "@/lib/domain/money";
 import { issuedCreditsByInvoice } from "./credit-notes";
@@ -525,4 +527,29 @@ export async function getCollectedThisMonth(
 ): Promise<{ amount: Money; unconvertibleCount: number }> {
   const { months, unconvertibleCount } = await getCashFlow(db, organizationId, 1);
   return { amount: months[0].collected, unconvertibleCount };
+}
+
+/** Org-wide activity timeline (brief §5.3) — the org's audit trail, newest
+ * first, with actor names joined. Reads may bypass services (§1.1); this
+ * lives here so the org and per-entity timelines share one shape. */
+export async function getOrgTimeline(
+  db: Database,
+  organizationId: string,
+  limit = 100,
+) {
+  return db
+    .select({
+      id: auditLog.id,
+      action: auditLog.action,
+      actorType: auditLog.actorType,
+      actorId: auditLog.actorId,
+      actorName: user.name,
+      changes: auditLog.changes,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .leftJoin(user, eq(user.id, auditLog.actorId))
+    .where(eq(auditLog.organizationId, organizationId))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
 }

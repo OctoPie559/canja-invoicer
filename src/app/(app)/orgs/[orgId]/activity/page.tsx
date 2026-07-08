@@ -1,6 +1,5 @@
-import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
-import { auditLog, user } from "@/lib/db/schema";
+import { getOrgTimeline } from "@/lib/services/reporting";
 import { requireMembership } from "@/lib/transport/org";
 import { ActivityRoadmap } from "@/components/activity-roadmap";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,21 +17,7 @@ export default async function OrgActivityPage({
   const { orgId } = await params;
   await requireMembership(orgId);
 
-  const timeline = await getDb()
-    .select({
-      id: auditLog.id,
-      action: auditLog.action,
-      actorType: auditLog.actorType,
-      actorId: auditLog.actorId,
-      actorName: user.name,
-      changes: auditLog.changes,
-      createdAt: auditLog.createdAt,
-    })
-    .from(auditLog)
-    .leftJoin(user, eq(user.id, auditLog.actorId))
-    .where(eq(auditLog.organizationId, orgId))
-    .orderBy(desc(auditLog.createdAt))
-    .limit(100);
+  const timeline = await getOrgTimeline(getDb(), orgId);
 
   return (
     <div className="space-y-6">
