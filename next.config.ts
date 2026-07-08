@@ -53,3 +53,16 @@ export default withSentryConfig(nextConfig, {
     },
   },
 });
+
+module.exports = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "assets.syncra.co.ke",
+        port: "",
+        pathname: "/**",
+      }
+    ]
+  }
+}

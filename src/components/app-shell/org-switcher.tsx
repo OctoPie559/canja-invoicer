@@ -15,6 +15,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import Image from "next/image";
 
 export interface OrgSummary {
   id: string;
@@ -26,9 +27,11 @@ export interface OrgSummary {
 export function OrgSwitcher({
   orgs,
   currentOrgId,
+  logoUrl,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
+  logoUrl?: string | null
 }) {
   const current = orgs.find((o) => o.id === currentOrgId);
   return (
@@ -40,9 +43,20 @@ export function OrgSwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent"
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">
-                {current?.name?.[0]?.toUpperCase() ?? "?"}
-              </span>
+              {logoUrl ? (
+                <Image
+                  width={32}
+                  height={32}
+                  src = {logoUrl}
+                  alt = {current?.name ?? "Organization logo"}
+                  className = "size-8 rounded-md"
+                  loading = "eager"
+                />
+              ) : (
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">
+                  {current?.name?.[0]?.toUpperCase() ?? "?"}
+                </span>
+              )}
               <span className="grid flex-1 text-left leading-tight">
                 <span className="text-[10px] font-medium tracking-widest text-muted-foreground uppercase">
                   Organization
