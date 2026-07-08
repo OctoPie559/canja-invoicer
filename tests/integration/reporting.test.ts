@@ -107,6 +107,7 @@ import {
   issueInvoice,
 } from "@/lib/services/invoices";
 import { markOverdueInvoices, recordPayment } from "@/lib/services/payments";
+import { voidInvoice } from "@/lib/services/invoices";
 import {
   getAgingBuckets,
   getCashFlow,
@@ -288,5 +289,38 @@ describe("slice-5 reporting (service-built fixtures)", () => {
     expect(rows).toHaveLength(0);
     const { months } = await getCashFlow(db, fx.orgB, 3);
     expect(months.every((m) => m.invoiced.isZero() && m.collected.isZero())).toBe(true);
+    const breakdown = await getStatusBreakdown(db, fx.orgB);
+    expect(breakdown.rows).toHaveLength(0);
+    const aging = await getAgingBuckets(db, fx.orgB);
+    expect(aging.buckets.every((b) => b.count === 0 && b.amount.isZero())).toBe(true);
+  });
+
+  it("received cash on a later-voided invoice stays collected in BOTH figures", async () => {
+    // verifier regression: partial payment, then void — the tile's
+    // "this month" and "all time" numbers must keep agreeing
+    const before = await getFinancialOverview(db, fx.orgA);
+    const flowBefore = await getCashFlow(db, fx.orgA, 6);
+
+    const inv = await issue({ customerId: acme, currency: "KES", amount: "800.00" });
+    await recordPayment(db, actor(), {
+      invoiceId: inv,
+      amount: "300.00",
+      currency: "KES",
+      method: "cash",
+      paidAt: today,
+    });
+    await voidInvoice(db, actor(), { id: inv, reason: "reporting regression" });
+
+    const after = await getFinancialOverview(db, fx.orgA);
+    const flowAfter = await getCashFlow(db, fx.orgA, 6);
+
+    // lifetime collected grew by exactly the received KES 300
+    expect(after.collected.amountMinor - before.collected.amountMinor).toBe(30_000n);
+    // and cash flow's month grew by the same amount — the figures reconcile
+    const monthBefore = flowBefore.months[flowBefore.months.length - 1].collected;
+    const monthAfter = flowAfter.months[flowAfter.months.length - 1].collected;
+    expect(monthAfter.amountMinor - monthBefore.amountMinor).toBe(30_000n);
+    // the voided document contributes nothing to outstanding
+    expect(after.outstanding.amountMinor).toBe(before.outstanding.amountMinor);
   });
 });

@@ -69,6 +69,12 @@ export default async function OrgOverviewPage({
   // business sum above happened in Money (bigint) inside the services
   const chartValue = (m: Money) => Number(m.toDecimalString());
   const collectedThisMonth = cashFlow.months[cashFlow.months.length - 1].collected;
+  const unconvertibleTotal =
+    overview.unconvertibleCount +
+    cashFlow.unconvertibleCount +
+    statusBreakdown.unconvertibleCount +
+    aging.unconvertibleCount +
+    topCustomers.unconvertibleCount;
 
   return (
     <div className="space-y-6">
@@ -81,12 +87,13 @@ export default async function OrgOverviewPage({
         </span>
       </div>
 
-      {overview.unconvertibleCount > 0 && (
+      {unconvertibleTotal > 0 && (
         <Alert variant="destructive">
           <AlertTriangle />
           <AlertDescription>
-            {overview.unconvertibleCount} foreign-currency invoice(s) have no
-            exchange-rate snapshot and are excluded from these totals.
+            Some foreign-currency records have no exchange-rate snapshot and
+            are excluded from these totals ({unconvertibleTotal} across the
+            reports below).
           </AlertDescription>
         </Alert>
       )}

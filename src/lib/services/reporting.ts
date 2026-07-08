@@ -82,7 +82,6 @@ export async function getFinancialOverview(
       draftCount += 1;
       continue;
     }
-    if (row.status === "void") continue;
 
     const paid = toBase(row.amountPaidMinor, row.currency, row.fxRateToBase);
     const remaining = toBase(
@@ -95,7 +94,10 @@ export async function getFinancialOverview(
       continue;
     }
 
+    // received cash is collected even if the document is later voided —
+    // the same rule getCashFlow applies, so the two figures reconcile
     collected = collected.add(paid);
+    if (row.status === "void") continue;
     if (OPEN_STATUSES.has(row.status)) {
       openInvoiceCount += 1;
       outstanding = outstanding.add(remaining);
@@ -244,7 +246,13 @@ export async function getCashFlow(
       fxRateToBase: invoices.fxRateToBase,
     })
     .from(payments)
-    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .innerJoin(
+      invoices,
+      and(
+        eq(invoices.id, payments.invoiceId),
+        eq(invoices.organizationId, organizationId),
+      ),
+    )
     .where(
       and(
         eq(payments.organizationId, organizationId),
@@ -310,7 +318,6 @@ export async function getStatusBreakdown(
       total: Money.zero(base),
       outstanding: Money.zero(base),
     };
-    entry.count += 1;
     const total = toBase(row.totalMinor ?? 0n, row.currency, row.fxRateToBase);
     const remaining = toBase(
       (row.totalMinor ?? 0n) - (row.amountPaidMinor ?? 0n),
@@ -318,12 +325,15 @@ export async function getStatusBreakdown(
       row.fxRateToBase,
     );
     if (total === null || remaining === null) {
+      // exclude the WHOLE row (count and money) so each line reconciles;
+      // the surfaced counter is the warning
       unconvertibleCount += 1;
-    } else {
-      entry.total = entry.total.add(total);
-      if (OPEN_STATUSES.has(row.status)) {
-        entry.outstanding = entry.outstanding.add(remaining);
-      }
+      continue;
+    }
+    entry.count += 1;
+    entry.total = entry.total.add(total);
+    if (OPEN_STATUSES.has(row.status)) {
+      entry.outstanding = entry.outstanding.add(remaining);
     }
     byStatus.set(row.status, entry);
   }
@@ -433,7 +443,13 @@ export async function getTopCustomers(
       amountPaidMinor: invoices.amountPaidMinor,
     })
     .from(invoices)
-    .innerJoin(customers, eq(customers.id, invoices.customerId))
+    .innerJoin(
+      customers,
+      and(
+        eq(customers.id, invoices.customerId),
+        eq(customers.organizationId, organizationId),
+      ),
+    )
     .where(
       and(
         eq(invoices.organizationId, organizationId),
