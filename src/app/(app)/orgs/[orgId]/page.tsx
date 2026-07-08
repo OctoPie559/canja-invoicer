@@ -231,17 +231,6 @@ export default async function OrgOverviewPage({
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="font-heading text-base">
-            Recent activity
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ActivityTimeline entries={timeline} />
-        </CardContent>
-      </Card>
     </div>
   );
 }
