@@ -39,10 +39,17 @@ import { jsonSafe } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
 import {
+  PLAN_ENTITLEMENTS,
   requireEntitlement,
   requireWithinCap,
   type Plan,
 } from "@/lib/authz/entitlements";
+import {
+  DEFAULT_PDF_TEMPLATE,
+  isPdfTemplateId,
+  isProTemplate,
+  type PdfTemplateId,
+} from "@/lib/domain/pdf-templates";
 import { getMembership } from "./organizations";
 import {
   createInvoiceDraftSchema,
@@ -69,6 +76,17 @@ import {
 } from "@/lib/domain/invoice-snapshot";
 import { appBaseUrl } from "@/lib/config";
 import { maskPiiInText } from "@/lib/domain/pii";
+import { getFileStorage } from "@/lib/storage/r2";
+
+/** Snapshot logoKey → public URL; null when storage is not configured. */
+function resolveLogoUrl(logoKey: string | null | undefined): string | null {
+  if (!logoKey) return null;
+  try {
+    return getFileStorage().publicUrl(logoKey);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Invoice lifecycle (brief §104, ARCHITECTURE.md §8 slice 2).
@@ -593,6 +611,15 @@ export async function issueInvoice(
       // this snapshot alone), so they freeze with everything else
       notes: invoice.notes,
       terms: invoice.terms,
+      // frozen layout: a Pro template survives on issued documents forever,
+      // but a downgraded org issues NEW documents in classic
+      pdfTemplate:
+        branding?.pdfTemplate &&
+        isPdfTemplateId(branding.pdfTemplate) &&
+        (!isProTemplate(branding.pdfTemplate) ||
+          PLAN_ENTITLEMENTS[org.plan].customTemplates)
+          ? branding.pdfTemplate
+          : DEFAULT_PDF_TEMPLATE,
     });
 
     await tx
@@ -829,13 +856,23 @@ export async function getInvoiceByPublicToken(db: Database, token: string) {
     .from(subscriptions)
     .where(eq(subscriptions.organizationId, invoice.organizationId))
     .limit(1);
+  const snapshot = parseInvoiceSnapshot(invoice.snapshot);
   return {
-    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    snapshot,
     status: invoice.status as InvoiceStatus,
     amountPaidMinor: invoice.amountPaidMinor ?? 0n,
     // free-plan documents carry the invoicer footer (brief §4.4)
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl: resolveLogoUrl(snapshot.branding?.logoKey),
+    template: snapshotTemplate(snapshot),
   };
+}
+
+/** Frozen layout; documents issued before templates render classic. */
+function snapshotTemplate(snapshot: InvoiceSnapshot): PdfTemplateId {
+  return snapshot.pdfTemplate && isPdfTemplateId(snapshot.pdfTemplate)
+    ? snapshot.pdfTemplate
+    : DEFAULT_PDF_TEMPLATE;
 }
 
 /** Snapshot + watermark flag for the authenticated PDF download. */
@@ -861,11 +898,14 @@ export async function getInvoicePdfData(
     .from(subscriptions)
     .where(eq(subscriptions.organizationId, organizationId))
     .limit(1);
+  const snapshot = parseInvoiceSnapshot(invoice.snapshot);
   return {
-    snapshot: parseInvoiceSnapshot(invoice.snapshot),
+    snapshot,
     status: invoice.status as InvoiceStatus,
     displayNumber: invoice.displayNumber!,
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
+    logoUrl: resolveLogoUrl(snapshot.branding?.logoKey),
+    template: snapshotTemplate(snapshot),
   };
 }
 

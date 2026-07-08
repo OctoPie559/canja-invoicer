@@ -50,8 +50,12 @@ export const payments = pgTable(
     method: paymentMethod("method").notNull(),
     source: paymentSource("source").notNull().default("manual"),
     provider: text("provider"),
-    // idempotency key for gateway callbacks (M-Pesa retries/duplicates)
+    // idempotency key for gateway callbacks (M-Pesa retries/duplicates);
+    // GLOBALLY unique — never fed from manual entry
     providerTransactionId: text("provider_transaction_id"),
+    // free-text manual reference (bank slip, M-Pesa code) — deliberately
+    // non-unique: one transfer may legitimately settle several invoices
+    reference: text("reference"),
     paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
     recordedBy: text("recorded_by"),
     notes: text("notes"),

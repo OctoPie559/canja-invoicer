@@ -85,6 +85,20 @@
       "when": 1783412150239,
       "tag": "0011_invoice_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783431275961,
+      "tag": "0012_payment_reference",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783432992247,
+      "tag": "0013_pdf_template",
+      "breakpoints": true
     }
   ]
 }
