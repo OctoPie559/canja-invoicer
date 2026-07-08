@@ -27,6 +27,8 @@ export const products = pgTable(
     unitPriceMinor: moneyMinor("unit_price_minor"),
     currency: text("currency").notNull(),
     defaultTaxRateId: text("default_tax_rate_id").references(() => taxRates.id),
+    // R2 object key for the catalog image; public URL resolved at read time
+    imageKey: text("image_key"),
     ...timestamps,
     ...softDelete,
     ...optimisticLock,
