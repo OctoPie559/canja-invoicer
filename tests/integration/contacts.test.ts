@@ -13,8 +13,12 @@ import {
   createContact,
   deleteContact,
   listContacts,
+  removeContactPhoto,
   updateContact,
+  uploadContactPhoto,
 } from "@/lib/services/contacts";
+import { ValidationError } from "@/lib/domain/errors";
+import type { FileStorage, StoredFile } from "@/lib/storage/port";
 import {
   createCustomer,
   getCustomer,
@@ -291,5 +295,110 @@ describe("contact persons", () => {
       .from(auditLog)
       .where(eq(auditLog.entityId, customerId));
     expect(audited.map((a) => a.action)).toContain("contact.removed");
+  });
+
+  it("profile photos: upload, replace deletes the old object, remove clears", async () => {
+    const objects = new Map<string, number>();
+    const storage: FileStorage = {
+      async put(p): Promise<StoredFile> {
+        objects.set(p.key, p.body.byteLength);
+        return { key: p.key, publicUrl: `https://assets.test/${p.key}` };
+      },
+      async delete(key) {
+        objects.delete(key);
+      },
+      publicUrl: (key) => `https://assets.test/${key}`,
+    };
+    const png = () => {
+      const b = new Uint8Array(64);
+      b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      return b;
+    };
+    const { contactId } = await createContact(db, actorInA(), {
+      customerId,
+      firstName: "Photo",
+      lastName: "Person",
+    });
+
+    const first = await uploadContactPhoto(
+      db,
+      actorInA(),
+      { contactId, bytes: png(), contentType: "image/png" },
+      { storage },
+    );
+    let [row] = await db
+      .select()
+      .from(customerContacts)
+      .where(eq(customerContacts.id, contactId));
+    expect(row.photoKey).toBe(first.photoKey);
+    expect(objects.has(first.photoKey)).toBe(true);
+
+    // replace: contact photos are PII referenced only by the live row —
+    // the superseded object IS deleted (deliberate opposite of logos,
+    // which issued snapshots reference forever)
+    const second = await uploadContactPhoto(
+      db,
+      actorInA(),
+      { contactId, bytes: png(), contentType: "image/png" },
+      { storage },
+    );
+    expect(objects.has(first.photoKey)).toBe(false);
+    expect(objects.has(second.photoKey)).toBe(true);
+
+    // remove clears the column and the object
+    await removeContactPhoto(db, actorInA(), { contactId }, { storage });
+    [row] = await db
+      .select()
+      .from(customerContacts)
+      .where(eq(customerContacts.id, contactId));
+    expect(row.photoKey).toBeNull();
+    expect(objects.size).toBe(0);
+
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, contactId));
+    const actions = audits.map((a) => a.action);
+    expect(actions).toContain("contact.photo_updated");
+    expect(actions).toContain("contact.photo_removed");
+  });
+
+  it("profile photos: bad bytes rejected before storage; cross-org rejected", async () => {
+    const puts: string[] = [];
+    const storage: FileStorage = {
+      async put(p): Promise<StoredFile> {
+        puts.push(p.key);
+        return { key: p.key, publicUrl: `x/${p.key}` };
+      },
+      async delete() {},
+      publicUrl: (key) => `x/${key}`,
+    };
+    const { contactId } = await createContact(db, actorInA(), {
+      customerId,
+      firstName: "Reject",
+    });
+    // declared png, bytes are not a png — nothing may reach storage
+    await expect(
+      uploadContactPhoto(
+        db,
+        actorInA(),
+        { contactId, bytes: new Uint8Array(32), contentType: "image/png" },
+        { storage },
+      ),
+    ).rejects.toThrow(ValidationError);
+    expect(puts).toHaveLength(0);
+
+    // org B's actor cannot touch org A's contact
+    const png = new Uint8Array(64);
+    png.set([0x89, 0x50, 0x4e, 0x47]);
+    await expect(
+      uploadContactPhoto(
+        db,
+        { actorType: "user", actorId: fx.bob.id, organizationId: fx.orgB },
+        { contactId, bytes: png, contentType: "image/png" },
+        { storage },
+      ),
+    ).rejects.toThrow(NotFoundError);
+    expect(puts).toHaveLength(0);
   });
 });

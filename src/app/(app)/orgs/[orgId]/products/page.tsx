@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
-import { listProducts } from "@/lib/services/products";
+import { listProducts, productImageUrl } from "@/lib/services/products";
 import { requireMembership } from "@/lib/transport/org";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,8 +57,18 @@ export default async function ProductsPage({
                     <TableCell className="font-medium">
                       <Link
                         href={`/orgs/${orgId}/products/${p.id}`}
-                        className="hover:underline"
+                        className="flex items-center gap-2 hover:underline"
                       >
+                        {productImageUrl(p.imageKey) ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- R2-hosted
+                          <img
+                            src={productImageUrl(p.imageKey)!}
+                            alt=""
+                            className="size-7 rounded border object-cover"
+                          />
+                        ) : (
+                          <span className="flex size-7 items-center justify-center rounded border border-dashed" />
+                        )}
                         {p.name}
                       </Link>
                     </TableCell>

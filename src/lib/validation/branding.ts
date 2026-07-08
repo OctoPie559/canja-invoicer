@@ -35,7 +35,3 @@ export const updateBrandingSchema = z.object({
     .or(z.literal("").transform(() => null)),
 });
 export type UpdateBrandingInput = z.input<typeof updateBrandingSchema>;
-
-/** Logo uploads: small raster images only. */
-export const LOGO_MAX_BYTES = 512 * 1024;
-export const LOGO_CONTENT_TYPES = ["image/png", "image/jpeg"] as const;
