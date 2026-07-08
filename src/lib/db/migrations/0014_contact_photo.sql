@@ -1,0 +1,1 @@
+ALTER TABLE "customer_contacts" ADD COLUMN "photo_key" text;

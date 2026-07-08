@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
 import { listComments } from "@/lib/services/comments";
-import { listContacts } from "@/lib/services/contacts";
+import { contactPhotoUrl, listContacts } from "@/lib/services/contacts";
 import {
   getCustomer,
   getCustomerMails,
@@ -21,7 +21,7 @@ import { ContactPersons } from "@/components/contact-persons";
 import { contactDisplayName } from "@/lib/format/contact";
 import { CustomerComments } from "@/components/customer-comments";
 import { DeleteButton } from "@/components/delete-button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -84,7 +84,7 @@ export default async function CustomerWorkspacePage({
   if (!customer) notFound();
 
   const period = statementPeriod(periodPreset);
-  const [receivables, timeline, comments, transactions, mails, statement, contacts] =
+  const [receivables, timeline, comments, transactions, mails, statement, rawContacts] =
     await Promise.all([
       getCustomerReceivables(db, orgId, customerId),
       getCustomerTimeline(db, orgId, customerId),
@@ -94,6 +94,12 @@ export default async function CustomerWorkspacePage({
       getCustomerStatement(db, orgId, customerId, period),
       listContacts(db, orgId, customerId),
     ]);
+
+  // resolve profile photos once, server-side (null when storage unset)
+  const contacts = rawContacts.map((c) => ({
+    ...c,
+    photoUrl: contactPhotoUrl(c.photoKey),
+  }));
 
   const primaryContact = contacts.find((c) => c.isPrimary) ?? null;
   const billingAddress = [
@@ -168,6 +174,12 @@ export default async function CustomerWorkspacePage({
                 {/* primary contact card (design ref: person atop the column) */}
                 <div className="flex items-center gap-3 rounded-md bg-muted/50 p-3">
                   <Avatar className="size-10">
+                    {primaryContact?.photoUrl && (
+                      <AvatarImage
+                        src={primaryContact.photoUrl}
+                        alt={contactDisplayName(primaryContact)}
+                      />
+                    )}
                     <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">
                       {(primaryContact?.firstName ?? customer.name)[0]?.toUpperCase()}
                     </AvatarFallback>

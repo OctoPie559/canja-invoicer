@@ -10,6 +10,11 @@ import {
   deleteContact,
   updateContact,
 } from "@/lib/services/contacts";
+import {
+  removeContactPhoto,
+  uploadContactPhoto,
+} from "@/lib/services/contacts";
+import { StorageNotConfiguredError } from "@/lib/storage/port";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
@@ -94,6 +99,59 @@ export async function deleteContactAction(
       deleteContact(getDb(), ctx, { id: contactId, version }),
     );
   } catch (error) {
+    return mapError(error);
+  }
+  revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);
+  return { error: null };
+}
+
+export async function uploadContactPhotoAction(
+  organizationId: string,
+  customerId: string,
+  contactId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Choose an image file" };
+  }
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await runWithActor(ctx, () =>
+      uploadContactPhoto(getDb(), ctx, {
+        contactId,
+        bytes,
+        contentType: file.type,
+      }),
+    );
+  } catch (error) {
+    if (error instanceof StorageNotConfiguredError) {
+      return { error: "File storage is not configured in this environment" };
+    }
+    return mapError(error);
+  }
+  revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);
+  return { error: null };
+}
+
+export async function removeContactPhotoAction(
+  organizationId: string,
+  customerId: string,
+  contactId: string,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      removeContactPhoto(getDb(), ctx, { contactId }),
+    );
+  } catch (error) {
+    if (error instanceof StorageNotConfiguredError) {
+      return { error: "File storage is not configured in this environment" };
+    }
     return mapError(error);
   }
   revalidatePath(`/orgs/${organizationId}/customers/${customerId}`);

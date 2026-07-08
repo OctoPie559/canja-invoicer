@@ -12,6 +12,12 @@ import { writeAudit } from "@/lib/audit/write";
 import { changedFields } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
+import type { FileStorage } from "@/lib/storage/port";
+import { getFileStorage } from "@/lib/storage/r2";
+import {
+  assertImageUpload,
+  imageExtension,
+} from "@/lib/storage/images";
 import { getMembership } from "./organizations";
 import {
   createContactSchema,
@@ -447,4 +453,154 @@ export async function listContacts(
     )
     .orderBy(asc(customerContacts.createdAt));
   return rows.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+}
+
+export interface ContactPhotoDeps {
+  storage?: FileStorage;
+}
+
+/**
+ * Profile photo for a contact person. Unlike branding logos (whose keys
+ * are frozen into issue snapshots), contact photos are referenced ONLY by
+ * the live row — so the superseded object is deleted after commit: photos
+ * are personal data, and keeping unreachable copies would violate the
+ * data-minimization posture (§7).
+ */
+export async function uploadContactPhoto(
+  db: Database,
+  ctx: ActorContext,
+  input: { contactId: string; bytes: Uint8Array; contentType: string },
+  deps: ContactPhotoDeps = {},
+): Promise<{ photoKey: string }> {
+  if (!ctx.actorId) throw new PermissionError("customer.update");
+  assertImageUpload(input.bytes, input.contentType);
+  const storage = deps.storage ?? getFileStorage();
+  const photoKey = `orgs/${ctx.organizationId}/contacts/${input.contactId}/photo-${newId()}.${imageExtension(input.contentType as never)}`;
+
+  // authorization and existence BEFORE the storage side effect
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "customer.update");
+    const [row] = await tx
+      .select({ id: customerContacts.id })
+      .from(customerContacts)
+      .where(
+        and(
+          eq(customerContacts.id, input.contactId),
+          eq(customerContacts.organizationId, ctx.organizationId),
+          isNull(customerContacts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundError("Contact person");
+  });
+
+  await storage.put({
+    key: photoKey,
+    body: input.bytes,
+    contentType: input.contentType,
+  });
+
+  let previousKey: string | null = null;
+  try {
+    await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "customer.update");
+      const [before] = await tx
+        .select()
+        .from(customerContacts)
+        .where(
+          and(
+            eq(customerContacts.id, input.contactId),
+            eq(customerContacts.organizationId, ctx.organizationId),
+            isNull(customerContacts.deletedAt),
+          ),
+        )
+        .for("update");
+      if (!before) throw new NotFoundError("Contact person");
+      previousKey = before.photoKey;
+
+      await tx
+        .update(customerContacts)
+        .set({
+          photoKey,
+          version: before.version + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(customerContacts.id, input.contactId));
+      await writeAudit(tx, ctx, {
+        action: "contact.photo_updated",
+        entityType: "contact",
+        entityId: input.contactId,
+        changes: { before: { photoKey: before.photoKey }, after: { photoKey } },
+      });
+    });
+  } catch (error) {
+    await storage.delete(photoKey).catch(() => {});
+    throw error;
+  }
+
+  if (previousKey) {
+    await storage.delete(previousKey).catch(() => {
+      // best-effort: an orphaned photo is swept by lifecycle rules
+    });
+  }
+  return { photoKey };
+}
+
+export async function removeContactPhoto(
+  db: Database,
+  ctx: ActorContext,
+  input: { contactId: string },
+  deps: ContactPhotoDeps = {},
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("customer.update");
+  const storage = deps.storage ?? getFileStorage();
+
+  let key: string | null = null;
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "customer.update");
+    const [before] = await tx
+      .select()
+      .from(customerContacts)
+      .where(
+        and(
+          eq(customerContacts.id, input.contactId),
+          eq(customerContacts.organizationId, ctx.organizationId),
+          isNull(customerContacts.deletedAt),
+        ),
+      )
+      .for("update");
+    if (!before) throw new NotFoundError("Contact person");
+    if (!before.photoKey) return;
+    key = before.photoKey;
+
+    await tx
+      .update(customerContacts)
+      .set({ photoKey: null, version: before.version + 1, updatedAt: new Date() })
+      .where(eq(customerContacts.id, input.contactId));
+    await writeAudit(tx, ctx, {
+      action: "contact.photo_removed",
+      entityType: "contact",
+      entityId: input.contactId,
+      changes: { before: { photoKey: key }, after: { photoKey: null } },
+    });
+  });
+
+  if (key) {
+    await storage.delete(key).catch(() => {});
+  }
+}
+
+/** photoKey → public URL; null when storage is not configured. */
+export function contactPhotoUrl(
+  photoKey: string | null | undefined,
+): string | null {
+  if (!photoKey) return null;
+  try {
+    return getFileStorage().publicUrl(photoKey);
+  } catch {
+    return null;
+  }
 }
