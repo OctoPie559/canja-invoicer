@@ -1,7 +1,18 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      // image uploads (logos/photos/product images) cap at 512 KB in the
+      // services, but multipart overhead + near-limit files can brush the
+      // default 1 MB transport cap — 2 MB lets OUR validation answer with a
+      // friendly error instead of a transport-level explosion. The upload
+      // dialogs also validate client-side before submitting.
+      bodySizeLimit: "2mb",
+    },
+  },
+};
 
 // Source-map upload activates only when SENTRY_AUTH_TOKEN is configured;
 // otherwise this wrapper is a no-op and local/CI builds stay self-contained.

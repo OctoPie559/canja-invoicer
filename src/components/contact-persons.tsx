@@ -8,6 +8,7 @@ import {
   deleteContactAction,
   updateContactAction,
 } from "@/app/actions/contacts";
+import { validateImageFile } from "@/lib/storage/images";
 import {
   removeContactPhotoAction,
   uploadContactPhotoAction,
@@ -305,10 +306,12 @@ function ContactPhotoDialog({
   contact: ContactView;
 }) {
   const [open, setOpen] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
     uploadContactPhotoAction.bind(null, organizationId, customerId, contact.id),
     initialState,
   );
+  const shownError = clientError ?? state.error;
 
   return (
     <Dialog
@@ -329,9 +332,9 @@ function ContactPhotoDialog({
               Photo — {contactDisplayName(contact)}
             </DialogTitle>
           </DialogHeader>
-          {state.error && (
+          {shownError && (
             <Alert variant="destructive">
-              <AlertDescription>{state.error}</AlertDescription>
+              <AlertDescription>{shownError}</AlertDescription>
             </Alert>
           )}
           <div className="flex items-center gap-4">
@@ -352,6 +355,11 @@ function ContactPhotoDialog({
                 name="photo"
                 accept="image/png,image/jpeg"
                 required
+                onChange={(e) =>
+                  setClientError(
+                    validateImageFile(e.target.files?.[0] ?? null),
+                  )
+                }
               />
               <p className="text-xs text-muted-foreground">
                 PNG or JPEG, up to 512 KB.
@@ -388,7 +396,11 @@ function ContactPhotoDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={pending}>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={pending || clientError !== null}
+              >
                 {pending ? "Uploading…" : "Upload"}
               </Button>
             </span>

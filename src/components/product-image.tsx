@@ -7,6 +7,7 @@ import {
   uploadProductImageAction,
 } from "@/app/actions/products";
 import type { ActionState } from "@/app/actions/organizations";
+import { validateImageFile } from "@/lib/storage/images";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,10 +34,12 @@ export function ProductImage({
   canEdit: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
   const [state, action, pending] = useActionState<ActionState, FormData>(
     uploadProductImageAction.bind(null, organizationId, productId),
     { error: null },
   );
+  const shownError = clientError ?? state.error;
 
   const preview = imageUrl ? (
     // eslint-disable-next-line @next/next/no-img-element -- R2-hosted
@@ -71,9 +74,9 @@ export function ProductImage({
             <DialogHeader>
               <DialogTitle>Image — {productName}</DialogTitle>
             </DialogHeader>
-            {state.error && (
+            {shownError && (
               <Alert variant="destructive">
-                <AlertDescription>{state.error}</AlertDescription>
+                <AlertDescription>{shownError}</AlertDescription>
               </Alert>
             )}
             <Input
@@ -81,6 +84,9 @@ export function ProductImage({
               name="image"
               accept="image/png,image/jpeg"
               required
+              onChange={(e) =>
+                setClientError(validateImageFile(e.target.files?.[0] ?? null))
+              }
             />
             <p className="text-xs text-muted-foreground">
               PNG or JPEG, up to 512 KB. Shown in your catalog — invoices
@@ -112,7 +118,11 @@ export function ProductImage({
                 >
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" disabled={pending}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={pending || clientError !== null}
+                >
                   {pending ? "Uploading…" : "Upload"}
                 </Button>
               </span>

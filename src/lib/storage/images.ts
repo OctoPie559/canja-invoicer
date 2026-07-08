@@ -43,3 +43,21 @@ export function assertImageUpload(
 export function imageExtension(contentType: ImageContentType): string {
   return contentType === "image/png" ? "png" : "jpg";
 }
+
+/**
+ * Client-side pre-check for upload dialogs: returns a human message or
+ * null. Mirrors the server rules so oversized files never leave the
+ * browser (the Server Action transport would reject big bodies with an
+ * opaque error before our server validation could answer).
+ */
+export function validateImageFile(file: File | null): string | null {
+  if (!file || file.size === 0) return "Choose an image file";
+  if (!(IMAGE_CONTENT_TYPES as readonly string[]).includes(file.type)) {
+    return "Image must be a PNG or JPEG";
+  }
+  if (file.size > IMAGE_MAX_BYTES) {
+    const kb = Math.round(file.size / 1024);
+    return `Image is ${kb} KB — the limit is 512 KB. Please resize it.`;
+  }
+  return null;
+}
