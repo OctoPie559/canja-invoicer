@@ -35,8 +35,18 @@ export function ProductImage({
 }) {
   const [open, setOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
+  const boundUpload = uploadProductImageAction.bind(
+    null,
+    organizationId,
+    productId,
+  );
   const [state, action, pending] = useActionState<ActionState, FormData>(
-    uploadProductImageAction.bind(null, organizationId, productId),
+    // close on success, stay open to show a server error
+    async (prev, formData) => {
+      const result = await boundUpload(prev, formData);
+      if (!result.error) setOpen(false);
+      return result;
+    },
     { error: null },
   );
   const shownError = clientError ?? state.error;
@@ -59,7 +69,13 @@ export function ProductImage({
   return (
     <div className="flex items-end gap-2">
       {preview}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          setClientError(null);
+        }}
+      >
         <DialogTrigger asChild>
           <Button
             variant="outline"

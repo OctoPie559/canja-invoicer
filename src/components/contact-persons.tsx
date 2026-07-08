@@ -307,8 +307,19 @@ function ContactPhotoDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
+  const boundUpload = uploadContactPhotoAction.bind(
+    null,
+    organizationId,
+    customerId,
+    contact.id,
+  );
   const [state, action, pending] = useActionState(
-    uploadContactPhotoAction.bind(null, organizationId, customerId, contact.id),
+    // same close-on-success wrapper as ContactDialog above
+    async (prev: ActionState, formData: FormData) => {
+      const result = await boundUpload(prev, formData);
+      if (!result.error) setOpen(false);
+      return result;
+    },
     initialState,
   );
   const shownError = clientError ?? state.error;
@@ -318,6 +329,7 @@ function ContactPhotoDialog({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
+        setClientError(null);
       }}
     >
       <DialogTrigger asChild>
