@@ -33,9 +33,11 @@ import {
 export function AppSidebar({
   orgs,
   currentOrgId,
+  logoUrl,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
+  logoUrl?: string | null;
 }) {
   const pathname = usePathname();
   const orgRoot = `/orgs/${currentOrgId}`;
@@ -58,8 +60,8 @@ export function AppSidebar({
       <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4">
         <Logo />
       </div>
-      <SidebarHeader className="px-4 pt-3">
-        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
+      <SidebarHeader className="px-3">
+        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} logoUrl={logoUrl} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
