@@ -34,7 +34,8 @@ export default async function OrgOverviewPage({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  const { role } = await requireMembership(orgId);
+  const { role, session} = await requireMembership(orgId);
+  const userName = session.user.name
   const db = getDb();
 
   const [org] = await db
@@ -66,12 +67,12 @@ export default async function OrgOverviewPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
+      <div className="flex gap-2 items-center">
         <h1 className="font-heading text-xl font-semibold text-foreground">
-          {org.name}
+          Hi, {userName}
         </h1>
         <span className="flex items-center gap-2 text-sm text-muted-foreground">
-          your role <Badge variant="secondary">{role}</Badge>
+          <Badge variant="secondary">{role}</Badge>
         </span>
       </div>
 

@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { UserMenu } from "./user-menu";
 
 /**
  * App navigation. New sections slot in here as slices land
@@ -33,10 +34,18 @@ export function AppSidebar({
   orgs,
   currentOrgId,
   logoUrl,
+  session,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
   logoUrl?: string | null;
+  session: {
+    user: {
+      name: string;
+      email: string;
+      emailVerified: boolean;
+    };
+  };
 }) {
   const pathname = usePathname();
   const orgRoot = `/orgs/${currentOrgId}`;
@@ -53,10 +62,10 @@ export function AppSidebar({
   ];
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       {/* h-14 + border-b matches the content header, so the hairline runs
           as one continuous line across the app (per the design reference) */}
-      <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4">
+      <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
         <Logo />
       </div>
       <SidebarHeader className="px-3">
@@ -86,6 +95,14 @@ export function AppSidebar({
               ))}
             </SidebarMenu>
           </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup className="mt-auto">
+          <UserMenu
+            name={session.user.name}
+            email={session.user.email}
+            emailVerified={session.user.emailVerified}
+            settingsHref={`/orgs/${currentOrgId}/settings`}
+          />
         </SidebarGroup>
       </SidebarContent>
       <SidebarRail />
