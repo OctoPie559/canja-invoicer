@@ -10,10 +10,11 @@ import {
   deleteInvoiceDraft,
   issueInvoice,
   sendInvoice,
+  sendInvoiceReminder,
   updateInvoiceDraft,
   voidInvoice,
 } from "@/lib/services/invoices";
-import { invoiceEmail } from "@/lib/email/templates";
+import { invoiceEmail, invoiceReminderEmail } from "@/lib/email/templates";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
@@ -182,6 +183,35 @@ export async function sendInvoiceAction(
         // transport injects the rich template + PDF; the service default is
         // plain text so it stays framework-free
         { buildEmail: invoiceEmail },
+      ),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/invoices/${id}`);
+}
+
+export async function sendInvoiceReminderAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  const id = String(formData.get("id") ?? "");
+  let contactIds: unknown = [];
+  try {
+    contactIds = JSON.parse(String(formData.get("contactIds") ?? "[]"));
+  } catch {
+    contactIds = [];
+  }
+  try {
+    await runWithActor(ctx, () =>
+      sendInvoiceReminder(
+        getDb(),
+        ctx,
+        { id, contactIds: contactIds as never },
+        { buildEmail: invoiceReminderEmail },
       ),
     );
   } catch (error) {

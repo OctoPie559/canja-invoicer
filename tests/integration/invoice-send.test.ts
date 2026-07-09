@@ -14,10 +14,12 @@ import {
   issueInvoice,
   listInvoiceEmails,
   sendInvoice,
+  sendInvoiceReminder,
   voidInvoice,
 } from "@/lib/services/invoices";
 import { createCustomer, updateCustomer, getCustomer } from "@/lib/services/customers";
 import { listContacts } from "@/lib/services/contacts";
+import { recordPayment } from "@/lib/services/payments";
 import { createTestDb } from "../helpers/db";
 import { createTwoOrgFixture, type TwoOrgFixture } from "../helpers/fixtures";
 
@@ -262,5 +264,75 @@ describe("invoice send + public view (slice 3)", () => {
     // drafts have no document
     const { invoiceId: draftId } = await createInvoiceDraft(db, actorInA(), draftInput());
     expect(await getInvoicePdfData(db, fx.orgA, draftId)).toBeNull();
+  });
+
+  it("sends a reminder for an outstanding invoice; balance reflects payments", async () => {
+    const invoiceId = await issuedInvoice(); // total KES 1160.00
+    const { sent, sender } = fakeSender();
+    const first = await sendInvoiceReminder(
+      db,
+      actorInA(),
+      { id: invoiceId, contactIds: [contactId] },
+      { emailSender: sender, baseUrl: "https://app.example" },
+    );
+    expect(first.recipients).toEqual(["grace@acme.test"]);
+    expect(sent[0].subject).toContain("Reminder: invoice INV-");
+    expect(sent[0].text).toContain("1160.00"); // full balance
+    expect(sent[0].text).toContain("https://app.example/i/");
+    const log = await listInvoiceEmails(db, fx.orgA, invoiceId);
+    expect(log.some((e) => e.status === "sent")).toBe(true);
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityId, invoiceId),
+          eq(auditLog.action, "invoice.reminder_sent"),
+        ),
+      );
+    expect(audit).toBeDefined();
+
+    // after a partial payment the reminder shows the reduced balance
+    await recordPayment(db, actorInA(), {
+      invoiceId,
+      amount: "400.00",
+      currency: "KES",
+      method: "mpesa",
+      paidAt: "2026-07-09",
+    });
+    const { sent: sent2, sender: sender2 } = fakeSender();
+    await sendInvoiceReminder(
+      db,
+      actorInA(),
+      { id: invoiceId, contactIds: [contactId] },
+      { emailSender: sender2 },
+    );
+    expect(sent2[0].text).toContain("760.00");
+  });
+
+  it("reminders are rejected for draft, paid, and void invoices", async () => {
+    const { sender } = fakeSender();
+    const { invoiceId: draftId } = await createInvoiceDraft(db, actorInA(), draftInput());
+    await expect(
+      sendInvoiceReminder(db, actorInA(), { id: draftId, contactIds: [contactId] }, { emailSender: sender }),
+    ).rejects.toThrow(/Issue the invoice/);
+
+    const paidId = await issuedInvoice();
+    await recordPayment(db, actorInA(), {
+      invoiceId: paidId,
+      amount: "1160.00",
+      currency: "KES",
+      method: "mpesa",
+      paidAt: "2026-07-09",
+    });
+    await expect(
+      sendInvoiceReminder(db, actorInA(), { id: paidId, contactIds: [contactId] }, { emailSender: sender }),
+    ).rejects.toThrow(/already paid/);
+
+    const voidId = await issuedInvoice();
+    await voidInvoice(db, actorInA(), { id: voidId, reason: "test" });
+    await expect(
+      sendInvoiceReminder(db, actorInA(), { id: voidId, contactIds: [contactId] }, { emailSender: sender }),
+    ).rejects.toThrow(/void invoice cannot be reminded/);
   });
 });

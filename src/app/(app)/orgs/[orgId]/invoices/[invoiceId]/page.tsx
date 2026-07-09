@@ -5,7 +5,9 @@ import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
 import {
+  daysPastDue,
   isEditable,
+  isPastDue,
   isVoidable,
   type InvoiceStatus,
 } from "@/lib/domain/invoice-status";
@@ -33,6 +35,7 @@ import { DeleteButton } from "@/components/delete-button";
 import {
   IssueInvoiceDialog,
   SendInvoiceDialog,
+  SendReminderDialog,
   VoidInvoiceDialog,
 } from "@/components/invoice-actions";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
@@ -125,6 +128,13 @@ export default async function InvoiceWorkspacePage({
 
   const status = invoice.status as InvoiceStatus;
   const draft = isEditable(status);
+  // past-due derived from the due date directly, so the reminder button
+  // appears the moment an invoice lapses — not only after the daily cron
+  // has flipped the stored status to "overdue"
+  const today = new Date().toISOString().slice(0, 10);
+  const pastDue =
+    status === "overdue" || isPastDue(status, invoice.dueDate, today);
+  const daysOverdue = daysPastDue(invoice.dueDate, today);
   const snapshot = (invoice.snapshot ?? null) as InvoiceSnapshot | null;
   const currency = invoice.currency;
 
@@ -223,11 +233,26 @@ export default async function InvoiceWorkspacePage({
               balanceDue={balance.toString()}
             />
           )}
-          {!draft && can(role, "invoice.send") && status !== "void" && (
+          {/* once past due the reminder takes over — a single, unambiguous
+              "chase this" action instead of Send + Reminder side by side */}
+          {!draft && !pastDue && can(role, "invoice.send") && status !== "void" && (
             <SendInvoiceDialog
               organizationId={orgId}
               invoiceId={invoiceId}
               displayNumber={invoice.displayNumber ?? "this invoice"}
+              contacts={contacts.map((c) => ({
+                id: c.id,
+                name: contactDisplayName(c),
+                email: c.email,
+              }))}
+            />
+          )}
+          {isOutstanding(status) && pastDue && can(role, "invoice.send") && (
+            <SendReminderDialog
+              organizationId={orgId}
+              invoiceId={invoiceId}
+              displayNumber={invoice.displayNumber ?? "this invoice"}
+              daysOverdue={daysOverdue}
               contacts={contacts.map((c) => ({
                 id: c.id,
                 name: contactDisplayName(c),
