@@ -71,3 +71,12 @@ export const convertEstimateSchema = z.object({
   version: z.coerce.number().int().positive(),
 });
 export type ConvertEstimateInput = z.input<typeof convertEstimateSchema>;
+
+export const sendEstimateSchema = z.object({
+  id: z.string().min(1),
+  contactIds: z
+    .array(z.string().min(1))
+    .min(1, "Choose at least one recipient")
+    .max(10),
+});
+export type SendEstimateInput = z.input<typeof sendEstimateSchema>;

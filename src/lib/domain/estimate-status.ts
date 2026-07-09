@@ -2,14 +2,17 @@ import { ValidationError } from "./errors";
 
 /**
  * Estimate status machine (brief §105). Issue moves draft → sent (the
- * quote is out); the customer's answer lands it on accepted or declined;
- * time can expire it; accepted quotes convert into a linked invoice draft.
+ * quote is out); the customer opening the public link marks it viewed; the
+ * customer's answer lands it on accepted or declined; time can expire it;
+ * accepted quotes convert into a linked invoice draft.
  *
- *   draft ──issue──▶ sent ──▶ accepted ──convert──▶ converted
- *                     │  ╲──▶ declined
- *                     ╰────▶ expired ──▶ accepted (late yes is a yes)
+ *   draft ─issue─▶ sent ─view─▶ viewed ─▶ accepted ─convert─▶ converted
+ *                   │  ╲          │  ╲──▶ declined
+ *                   │   ╲─────────┴────▶ expired ─▶ accepted (late yes)
  *
  * - drafts are edited or deleted, never anything else
+ * - "viewed" is the customer having opened the public quote; it advances
+ *   only from "sent" (a decided quote is not un-decided by another view)
  * - declined/expired can still be accepted (customers change their minds);
  *   declined→expired is meaningless and stays illegal
  * - converted is terminal — the invoice carries the relationship forward
@@ -18,6 +21,7 @@ import { ValidationError } from "./errors";
 export type EstimateStatus =
   | "draft"
   | "sent"
+  | "viewed"
   | "accepted"
   | "declined"
   | "expired"
@@ -25,7 +29,8 @@ export type EstimateStatus =
 
 const TRANSITIONS: Record<EstimateStatus, readonly EstimateStatus[]> = {
   draft: ["sent"],
-  sent: ["accepted", "declined", "expired"],
+  sent: ["viewed", "accepted", "declined", "expired"],
+  viewed: ["accepted", "declined", "expired"],
   accepted: ["converted", "declined"],
   declined: ["accepted"],
   expired: ["accepted"],
@@ -58,4 +63,14 @@ export function isEstimateDeletable(status: EstimateStatus): boolean {
 
 export function isEstimateConvertible(status: EstimateStatus): boolean {
   return canEstimateTransition(status, "converted");
+}
+
+/** A view only advances a freshly-sent quote; anything else is a no-op. */
+export function marksAsViewed(status: EstimateStatus): boolean {
+  return status === "sent";
+}
+
+/** Statuses from which the customer may still accept/decline the quote. */
+export function isAwaitingDecision(status: EstimateStatus): boolean {
+  return status === "sent" || status === "viewed";
 }

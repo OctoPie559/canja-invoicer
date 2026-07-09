@@ -11,8 +11,10 @@ import {
   deleteEstimateDraft,
   issueEstimate,
   recordEstimateDecision,
+  sendEstimate,
   updateEstimateDraft,
 } from "@/lib/services/estimates";
+import { estimateEmail } from "@/lib/email/templates";
 import { requireSession, userActor } from "@/lib/transport/session";
 import type { ActionState } from "./organizations";
 
@@ -159,4 +161,33 @@ export async function convertEstimateAction(
     return mapError(error);
   }
   redirect(`/orgs/${organizationId}/invoices/${invoiceId}`);
+}
+
+export async function sendEstimateAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  const id = String(formData.get("id") ?? "");
+  let contactIds: unknown = [];
+  try {
+    contactIds = JSON.parse(String(formData.get("contactIds") ?? "[]"));
+  } catch {
+    contactIds = [];
+  }
+  try {
+    await runWithActor(ctx, () =>
+      sendEstimate(
+        getDb(),
+        ctx,
+        { id, contactIds: contactIds as never },
+        { buildEmail: estimateEmail },
+      ),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/estimates/${id}`);
 }

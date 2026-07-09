@@ -16,10 +16,15 @@ import {
   getEstimate,
   getEstimateByPublicToken,
   issueEstimate,
+  listEstimateEmails,
   listEstimates,
   recordEstimateDecision,
+  recordEstimateView,
+  recordPublicEstimateDecision,
+  sendEstimate,
   updateEstimateDraft,
 } from "@/lib/services/estimates";
+import type { EmailMessage } from "@/lib/email/port";
 import { getInvoice, issueInvoice } from "@/lib/services/invoices";
 import { createCustomer } from "@/lib/services/customers";
 import { createTestDb } from "../helpers/db";
@@ -247,5 +252,155 @@ describe("estimates (slice 6)", () => {
         ...draftInput(),
       }),
     ).rejects.toThrow(ConflictError);
+  });
+});
+
+
+describe("estimate public lifecycle + send (Zoho-style)", () => {
+  let db: Database;
+  let fx: TwoOrgFixture;
+  let customerA: string;
+  let contactId: string;
+
+  const actorInA = (): ActorContext => ({
+    actorType: "user",
+    actorId: fx.alice.id,
+    organizationId: fx.orgA,
+  });
+
+  const draftInput = () => ({
+    customerId: customerA,
+    currency: "KES" as const,
+    lines: [
+      { description: "Design", quantity: "1", unitPrice: "2500.00", discountBps: 0, taxRateBps: 0 },
+    ],
+  });
+
+  async function issued(
+    expiry = "2099-08-07",
+    issueDate = "2026-07-08",
+  ): Promise<string> {
+    const { estimateId } = await createEstimateDraft(db, actorInA(), draftInput());
+    const draft = await getEstimate(db, fx.orgA, estimateId);
+    await issueEstimate(db, actorInA(), {
+      id: estimateId,
+      version: draft!.version,
+      issueDate,
+      expiryDate: expiry,
+    });
+    return estimateId;
+  }
+
+  function fakeSender() {
+    const sent: EmailMessage[] = [];
+    return {
+      sent,
+      sender: {
+        async send(message: EmailMessage) {
+          sent.push(message);
+          return { providerMessageId: `fake-${sent.length}` };
+        },
+      },
+    };
+  }
+
+  beforeAll(async () => {
+    ({ db } = await createTestDb());
+    fx = await createTwoOrgFixture(db);
+    const c = await createCustomer(db, actorInA(), {
+      name: "Acme Ltd",
+      primaryContact: {
+        firstName: "Grace",
+        lastName: "Wanjiku",
+        email: "grace@acme.test",
+      },
+    });
+    customerA = c.customerId;
+    const { listContacts } = await import("@/lib/services/contacts");
+    contactId = (await listContacts(db, fx.orgA, customerA))[0].id;
+  });
+
+  it("recordEstimateView marks a sent quote viewed, then is a no-op", async () => {
+    const id = await issued();
+    const token = (await getEstimate(db, fx.orgA, id))!.publicToken!;
+    await recordEstimateView(db, token);
+    expect((await getEstimate(db, fx.orgA, id))!.status).toBe("viewed");
+    // idempotent — a second view does not change or error
+    await recordEstimateView(db, token);
+    expect((await getEstimate(db, fx.orgA, id))!.status).toBe("viewed");
+
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(eq(auditLog.entityId, id), eq(auditLog.action, "estimate.viewed")),
+      );
+    expect(audit.actorType).toBe("customer");
+    expect(audit.actorId).toBeNull();
+  });
+
+  it("a decided quote is not reverted by a later view", async () => {
+    const id = await issued();
+    const token = (await getEstimate(db, fx.orgA, id))!.publicToken!;
+    await recordPublicEstimateDecision(db, token, "accepted");
+    await recordEstimateView(db, token);
+    expect((await getEstimate(db, fx.orgA, id))!.status).toBe("accepted");
+  });
+
+  it("public accept/decline via token; second response and bad token rejected", async () => {
+    const id = await issued();
+    const token = (await getEstimate(db, fx.orgA, id))!.publicToken!;
+    const res = await recordPublicEstimateDecision(db, token, "declined");
+    expect(res.status).toBe("declined");
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(eq(auditLog.entityId, id), eq(auditLog.action, "estimate.declined")),
+      );
+    expect(audit.actorType).toBe("customer");
+    expect(audit.reason).toBe("via public link");
+
+    // already responded → rejected (declined is not awaiting a decision)
+    await expect(
+      recordPublicEstimateDecision(db, token, "accepted"),
+    ).rejects.toThrow(/already been responded/);
+    await expect(
+      recordPublicEstimateDecision(db, "not-a-real-token-xxxxxx", "accepted"),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it("public accept is refused after the valid-until date", async () => {
+    const id = await issued("2026-06-15", "2026-06-01"); // both past
+    const token = (await getEstimate(db, fx.orgA, id))!.publicToken!;
+    await expect(
+      recordPublicEstimateDecision(db, token, "accepted"),
+    ).rejects.toThrow(/expired/);
+    // but declining an expired quote is still fine
+    const res = await recordPublicEstimateDecision(db, token, "declined");
+    expect(res.status).toBe("declined");
+  });
+
+  it("sendEstimate emails contacts with a log row + audit; draft cannot send", async () => {
+    const { estimateId } = await createEstimateDraft(db, actorInA(), draftInput());
+    const { sender } = fakeSender();
+    await expect(
+      sendEstimate(db, actorInA(), { id: estimateId, contactIds: [contactId] }, { emailSender: sender }),
+    ).rejects.toThrow(/Issue the estimate/);
+
+    const id = await issued();
+    const { sent, sender: sender2 } = fakeSender();
+    const { recipients } = await sendEstimate(
+      db,
+      actorInA(),
+      { id, contactIds: [contactId] },
+      { emailSender: sender2, baseUrl: "https://app.example" },
+    );
+    expect(recipients).toEqual(["grace@acme.test"]);
+    expect(sent[0].to).toBe("grace@acme.test");
+    expect(sent[0].text).toContain("https://app.example/e/");
+    const log = await listEstimateEmails(db, fx.orgA, id);
+    expect(log).toHaveLength(1);
+    expect(log[0].status).toBe("sent");
   });
 });

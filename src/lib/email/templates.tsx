@@ -2,6 +2,7 @@ import { render } from "@react-email/render";
 import { emailAssetBaseUrl } from "@/lib/config";
 import { InvitationEmail } from "../../../emails/invitation";
 import { InvoiceSendEmail } from "../../../emails/invoice-send";
+import { EstimateSendEmail } from "../../../emails/estimate-send";
 import { PasswordResetEmail } from "../../../emails/password-reset";
 import { VerificationEmail } from "../../../emails/verification";
 import type { EmailMessage } from "./port";
@@ -82,6 +83,7 @@ export async function invitationEmail(params: {
 import { Money } from "@/lib/domain/money";
 import { renderInvoicePdf } from "@/lib/pdf/invoice";
 import type { InvoiceEmailBuilder } from "@/lib/services/invoices";
+import type { EstimateEmailBuilder } from "@/lib/services/estimates";
 
 export const invoiceEmail: InvoiceEmailBuilder = async ({
   snapshot,
@@ -107,6 +109,46 @@ export const invoiceEmail: InvoiceEmailBuilder = async ({
   const pdf = await renderInvoicePdf({ snapshot, status, watermark });
   return {
     subject: `Invoice ${snapshot.displayNumber} from ${organizationName}`,
+    ...body,
+    attachments: [
+      {
+        filename: `${snapshot.displayNumber}.pdf`,
+        contentBase64: pdf.toString("base64"),
+        contentType: "application/pdf",
+      },
+    ],
+  };
+};
+
+export const estimateEmail: EstimateEmailBuilder = async ({
+  snapshot,
+  publicUrl,
+  organizationName,
+  watermark,
+}) => {
+  const total = Money.fromMinor(
+    BigInt(snapshot.totals.totalMinor),
+    snapshot.currency,
+  ).toString();
+  const body = await renderBoth(
+    <EstimateSendEmail
+      organizationName={organizationName}
+      displayNumber={snapshot.displayNumber}
+      total={total}
+      validUntil={snapshot.dueDate ?? ""}
+      url={publicUrl}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  const pdf = await renderInvoicePdf({
+    snapshot,
+    status: "sent",
+    watermark,
+    docTitle: "ESTIMATE",
+    dueLabel: "Valid until",
+  });
+  return {
+    subject: `Quote ${snapshot.displayNumber} from ${organizationName}`,
     ...body,
     attachments: [
       {

@@ -22,6 +22,7 @@ const FILTERS: Array<{ label: string; value: EstimateStatus | "all" }> = [
   { label: "All", value: "all" },
   { label: "Draft", value: "draft" },
   { label: "Sent", value: "sent" },
+  { label: "Viewed", value: "viewed" },
   { label: "Accepted", value: "accepted" },
   { label: "Declined", value: "declined" },
   { label: "Expired", value: "expired" },
@@ -29,7 +30,7 @@ const FILTERS: Array<{ label: string; value: EstimateStatus | "all" }> = [
 ];
 
 function isStatus(v: string): v is EstimateStatus {
-  return ["draft", "sent", "accepted", "declined", "expired", "converted"].includes(v);
+  return ["draft", "sent", "viewed", "accepted", "declined", "expired", "converted"].includes(v);
 }
 
 export default async function EstimatesPage({

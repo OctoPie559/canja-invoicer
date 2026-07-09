@@ -56,6 +56,7 @@ export function AppSidebar({
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
+    { title: "Activity", href: `${orgRoot}/activity`, icon: Activity },
   ];
   // billing documents and money-in live under their own Sales section;
   // estimates and credit notes join it as their slices land

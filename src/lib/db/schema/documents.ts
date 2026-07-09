@@ -36,6 +36,7 @@ export const invoiceStatus = pgEnum("invoice_status", [
 export const estimateStatus = pgEnum("estimate_status", [
   "draft",
   "sent",
+  "viewed",
   "accepted",
   "declined",
   "expired",

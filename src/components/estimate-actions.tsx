@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { ArrowRightLeft, BadgeCheck, Check, Clock, X } from "lucide-react";
+import { ArrowRightLeft, BadgeCheck, Check, Clock, Send, X } from "lucide-react";
 import {
   convertEstimateAction,
   estimateDecisionAction,
   issueEstimateAction,
+  sendEstimateAction,
 } from "@/app/actions/estimates";
 import type { ActionState } from "@/app/actions/organizations";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -163,5 +164,96 @@ export function EstimateDecisionButtons({
         </Button>
       )}
     </span>
+  );
+}
+
+export function SendEstimateDialog({
+  organizationId,
+  estimateId,
+  displayNumber,
+  contacts,
+}: {
+  organizationId: string;
+  estimateId: string;
+  displayNumber: string;
+  contacts: Array<{ id: string; name: string; email: string | null }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const sendable = contacts.filter((c) => c.email);
+  const [selected, setSelected] = useState<string[]>(() =>
+    sendable.map((c) => c.id),
+  );
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    sendEstimateAction.bind(null, organizationId),
+    { error: null },
+  );
+  const toggle = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Send />
+          Send
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form action={action} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Send {displayNumber}</DialogTitle>
+            <DialogDescription>
+              Emails the quote with the PDF attached and a link where the
+              customer can view, accept, or decline it. Recipients are this
+              customer&apos;s contact persons.
+            </DialogDescription>
+          </DialogHeader>
+          {state.error && (
+            <Alert variant="destructive">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          )}
+          <input type="hidden" name="id" value={estimateId} />
+          <input
+            type="hidden"
+            name="contactIds"
+            value={JSON.stringify(selected)}
+          />
+          {sendable.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              None of this customer&apos;s contact persons has an email
+              address. Add one on the customer&apos;s page first.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {sendable.map((c) => (
+                <li key={c.id}>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(c.id)}
+                      onChange={() => toggle(c.id)}
+                      className="size-4 accent-primary"
+                    />
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-muted-foreground">{c.email}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending || selected.length === 0}>
+              {pending ? "Sending…" : "Send quote"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

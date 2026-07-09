@@ -8,7 +8,13 @@ import {
   isEstimateEditable,
   type EstimateStatus,
 } from "@/lib/domain/estimate-status";
-import { getEstimate, getEstimateTimeline } from "@/lib/services/estimates";
+import {
+  getEstimate,
+  getEstimateTimeline,
+  listEstimateEmails,
+} from "@/lib/services/estimates";
+import { listContacts } from "@/lib/services/contacts";
+import { contactDisplayName } from "@/lib/format/contact";
 import { getInvoiceSettings } from "@/lib/services/settings";
 import { requireMembership } from "@/lib/transport/org";
 import { deleteEstimateDraftAction } from "@/app/actions/estimates";
@@ -18,7 +24,9 @@ import { DocumentStatusBadge } from "@/components/document-status-badge";
 import {
   EstimateDecisionButtons,
   IssueEstimateDialog,
+  SendEstimateDialog,
 } from "@/components/estimate-actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -46,9 +54,11 @@ export default async function EstimateWorkspacePage({
   const db = getDb();
   const estimate = await getEstimate(db, orgId, estimateId);
   if (!estimate) notFound();
-  const [timeline, settings] = await Promise.all([
+  const [timeline, settings, emails, contacts] = await Promise.all([
     getEstimateTimeline(db, orgId, estimateId),
     getInvoiceSettings(db, orgId),
+    listEstimateEmails(db, orgId, estimateId),
+    listContacts(db, orgId, estimate.customerId),
   ]);
 
   const status = estimate.status as EstimateStatus;
@@ -112,6 +122,18 @@ export default async function EstimateWorkspacePage({
               status={status}
             />
           )}
+          {!draft && can(role, "estimate.send") && (
+            <SendEstimateDialog
+              organizationId={orgId}
+              estimateId={estimateId}
+              displayNumber={estimate.displayNumber ?? "this estimate"}
+              contacts={contacts.map((c) => ({
+                id: c.id,
+                name: contactDisplayName(c),
+                email: c.email,
+              }))}
+            />
+          )}
           {!draft && (
             <Button asChild variant="outline" size="sm">
               <a href={`/orgs/${orgId}/estimates/${estimateId}/pdf`}>
@@ -134,6 +156,7 @@ export default async function EstimateWorkspacePage({
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="emails">Emails</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -252,6 +275,47 @@ export default async function EstimateWorkspacePage({
           <Card>
             <CardContent className="pt-6">
               <ActivityRoadmap entries={timeline} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="emails">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="mb-4 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+                Send history
+              </h3>
+              {emails.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  This quote has not been emailed yet.
+                </p>
+              ) : (
+                <ul className="divide-y text-sm">
+                  {emails.map((e) => (
+                    <li
+                      key={e.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <span>
+                        <span className="font-medium">{e.recipient}</span>{" "}
+                        <span className="text-muted-foreground">— {e.subject}</span>
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <Badge
+                          variant={
+                            e.status === "send_failed" ? "destructive" : "secondary"
+                          }
+                        >
+                          {e.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {e.createdAt.toISOString().slice(0, 16).replace("T", " ")}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

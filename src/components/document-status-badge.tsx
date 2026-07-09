@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 const STYLES: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   sent: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  viewed: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
   accepted:
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   declined: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",

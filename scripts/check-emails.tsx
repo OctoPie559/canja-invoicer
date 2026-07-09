@@ -11,6 +11,7 @@
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
 import { InvoiceSendEmail } from "../emails/invoice-send";
+import { EstimateSendEmail } from "../emails/estimate-send";
 import { PasswordResetEmail } from "../emails/password-reset";
 import { SubscriptionConfirmation } from "../emails/subscription-confirmation";
 import { SubscriptionUpdate } from "../emails/subscription-update";
@@ -146,6 +147,23 @@ async function main() {
     "INV-000042",
     "KES 3,480.00",
     "View invoice",
+    "static/color-logo.png",
+  ]);
+
+  const est = await renderBoth(
+    <EstimateSendEmail
+      organizationName="Njogu-ini Studios"
+      displayNumber="EST-000007"
+      total="KES 3,480.00"
+      validUntil="2026-08-07"
+      url="https://app.example/e/tok"
+      baseUrl=""
+    />,
+  );
+  assert("estimate send", est.html, est.text, [
+    "EST-000007",
+    "KES 3,480.00",
+    "respond",
     "static/color-logo.png",
   ]);
 

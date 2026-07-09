@@ -12,6 +12,7 @@ import {
 const ALL: EstimateStatus[] = [
   "draft",
   "sent",
+  "viewed",
   "accepted",
   "declined",
   "expired",
@@ -22,9 +23,13 @@ describe("estimate status machine", () => {
   it("allows exactly the documented transitions", () => {
     const allowed: Array<[EstimateStatus, EstimateStatus]> = [
       ["draft", "sent"],
+      ["sent", "viewed"],
       ["sent", "accepted"],
       ["sent", "declined"],
       ["sent", "expired"],
+      ["viewed", "accepted"],
+      ["viewed", "declined"],
+      ["viewed", "expired"],
       ["accepted", "converted"],
       ["accepted", "declined"],
       ["declined", "accepted"],
@@ -42,6 +47,14 @@ describe("estimate status machine", () => {
     expect(ALL.filter(isEstimateEditable)).toEqual(["draft"]);
     expect(ALL.filter(isEstimateDeletable)).toEqual(["draft"]);
     expect(ALL.filter(isEstimateConvertible)).toEqual(["accepted"]);
+  });
+
+  it("viewed advances only from sent; decisions open from sent or viewed", async () => {
+    const { marksAsViewed, isAwaitingDecision } = await import(
+      "@/lib/domain/estimate-status"
+    );
+    expect(ALL.filter(marksAsViewed)).toEqual(["sent"]);
+    expect(ALL.filter(isAwaitingDecision)).toEqual(["sent", "viewed"]);
   });
 
   it("converted is terminal; asserts throw ValidationError", () => {
