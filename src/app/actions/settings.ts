@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db/client";
 import { DomainError } from "@/lib/domain/errors";
 import { ZodError } from "zod";
 import {
+  updateDocNumbering,
   createTaxRate,
   deleteTaxRate,
   updateInvoiceDefaults,
@@ -170,4 +171,26 @@ export async function updateOrganizationNameAction(
     return mapError(error);
   }
   redirect(`/orgs/${organizationId}/settings/profile`);
+}
+
+export async function updateDocNumberingAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      updateDocNumbering(getDb(), ctx, {
+        version: Number(formData.get("version") ?? 0),
+        doc: String(formData.get("doc") ?? "estimate") as never,
+        prefix: String(formData.get("prefix") ?? ""),
+        nextNumber: Number(formData.get("nextNumber") ?? 1),
+      }),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/orgs/${organizationId}/settings/invoices`);
 }

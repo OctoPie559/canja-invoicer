@@ -1,8 +1,8 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { AlertTriangle, Banknote, FileText, Wallet } from "lucide-react";
 import { getDb } from "@/lib/db/client";
-import { auditLog, organization } from "@/lib/db/schema";
+import { organization } from "@/lib/db/schema";
 import {
   getAgingBuckets,
   getCashFlow,
@@ -17,7 +17,6 @@ import { AGING_COLORS, STATUS_COLORS } from "@/components/charts/palette";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
 import type { InvoiceStatus } from "@/lib/domain/invoice-status";
 import { requireMembership } from "@/lib/transport/org";
-import { ActivityTimeline } from "@/components/activity-timeline";
 import { formatMoneyCompact, StatTile } from "@/components/stat-tile";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +34,8 @@ export default async function OrgOverviewPage({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  const { role } = await requireMembership(orgId);
+  const { role, session} = await requireMembership(orgId);
+  const userName = session.user.name
   const db = getDb();
 
   const [org] = await db
@@ -45,25 +45,14 @@ export default async function OrgOverviewPage({
     .limit(1);
   if (!org) notFound();
 
-  const [overview, cashFlow, statusBreakdown, aging, topCustomers, timeline] =
+  const [overview, cashFlow, statusBreakdown, aging, topCustomers] =
     await Promise.all([
-    getFinancialOverview(db, orgId),
-    getCashFlow(db, orgId, 6),
-    getStatusBreakdown(db, orgId),
-    getAgingBuckets(db, orgId),
-    getTopCustomers(db, orgId, 5),
-    db
-      .select({
-        id: auditLog.id,
-        action: auditLog.action,
-        actorType: auditLog.actorType,
-        createdAt: auditLog.createdAt,
-      })
-      .from(auditLog)
-      .where(eq(auditLog.organizationId, orgId))
-      .orderBy(desc(auditLog.createdAt))
-      .limit(10),
-  ]);
+      getFinancialOverview(db, orgId),
+      getCashFlow(db, orgId, 6),
+      getStatusBreakdown(db, orgId),
+      getAgingBuckets(db, orgId),
+      getTopCustomers(db, orgId, 5),
+    ]);
 
   // display-only conversion: charts scale by relative magnitude; every
   // business sum above happened in Money (bigint) inside the services
@@ -78,12 +67,12 @@ export default async function OrgOverviewPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
+      <div className="flex gap-2 items-center">
         <h1 className="font-heading text-xl font-semibold text-foreground">
-          {org.name}
+          Hi, {userName}
         </h1>
         <span className="flex items-center gap-2 text-sm text-muted-foreground">
-          your role <Badge variant="secondary">{role}</Badge>
+          <Badge variant="secondary">{role}</Badge>
         </span>
       </div>
 

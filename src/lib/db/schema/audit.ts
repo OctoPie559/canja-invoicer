@@ -16,7 +16,7 @@ import { organization } from "./auth";
  * Activity timelines read straight from this table.
  */
 
-export const actorType = pgEnum("actor_type", ["user", "system", "api_key"]);
+export const actorType = pgEnum("actor_type", ["user", "system", "api_key", "customer"]);
 
 export const auditLog = pgTable(
   "audit_log",

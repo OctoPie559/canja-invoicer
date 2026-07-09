@@ -131,7 +131,7 @@ export default async function PublicInvoicePage({
                     <dt className="text-muted-foreground">Due date</dt>
                     <dd>{snapshot.dueDate}</dd>
                   </div>
-                  {snapshot.paymentTermsDays !== null && (
+                  {snapshot.paymentTermsDays != null && (
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Terms</dt>
                       <dd>{paymentTermsLabel(snapshot.paymentTermsDays)}</dd>
@@ -172,7 +172,7 @@ export default async function PublicInvoicePage({
                         {fmt(l.unitPriceMinor)}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {pct(l.discountBps)}
+                        {pct(l.discountBps ?? 0)}
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {pct(l.taxRateBps)}
@@ -191,11 +191,11 @@ export default async function PublicInvoicePage({
                     {fmt(snapshot.totals.subtotalMinor)}
                   </span>
                 </div>
-                {BigInt(snapshot.totals.discountTotalMinor) > 0n && (
+                {BigInt(snapshot.totals.discountTotalMinor ?? "0") > 0n && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Discount</span>
                     <span className="font-mono">
-                      −{fmt(snapshot.totals.discountTotalMinor)}
+                      −{fmt(snapshot.totals.discountTotalMinor ?? "0")}
                     </span>
                   </div>
                 )}

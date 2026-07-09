@@ -168,6 +168,9 @@ export function InvoicePdf({
   watermark,
   logoUrl,
   template = DEFAULT_PDF_TEMPLATE,
+  docTitle = "INVOICE",
+  dueLabel = "Due date",
+  reference = null,
 }: {
   snapshot: InvoiceSnapshot;
   /** printed on annulled documents so a voided PDF can't pass as live */
@@ -177,11 +180,17 @@ export function InvoicePdf({
   logoUrl?: string | null;
   /** frozen into the snapshot at issue; defaults to classic for old docs */
   template?: PdfTemplateId;
+  /** "INVOICE" (default) / "ESTIMATE" / "CREDIT NOTE" */
+  docTitle?: string;
+  /** "Due date" (default) / "Valid until" */
+  dueLabel?: string;
+  /** extra reference line, e.g. "Credits invoice INV-000123" */
+  reference?: string | null;
 }) {
   const styles = makeStyles(template);
   const accent = snapshot.branding?.accentColor ?? ACCENT_FALLBACK;
   const currency = snapshot.currency;
-  const discounted = BigInt(snapshot.totals.discountTotalMinor) > 0n;
+  const discounted = BigInt(snapshot.totals.discountTotalMinor ?? "0") > 0n;
   const bold = template === "bold";
 
   return (
@@ -212,7 +221,7 @@ export function InvoicePdf({
               </View>
               <View>
                 <Text style={[styles.docTitle, styles.boldHeaderText]}>
-                  {status === "void" ? "INVOICE (VOID)" : "INVOICE"}
+                  {status === "void" ? `${docTitle} (VOID)` : docTitle}
                 </Text>
                 <Text style={[styles.docNumber, styles.boldHeaderText]}>
                   {snapshot.displayNumber}
@@ -251,7 +260,7 @@ export function InvoicePdf({
             {!bold && (
               <>
                 <Text style={styles.docTitle}>
-                  {status === "void" ? "INVOICE (VOID)" : "INVOICE"}
+                  {status === "void" ? `${docTitle} (VOID)` : docTitle}
                 </Text>
                 <Text style={styles.docNumber}>{snapshot.displayNumber}</Text>
               </>
@@ -261,11 +270,19 @@ export function InvoicePdf({
                 <Text style={styles.metaLabel}>Issue date</Text>
                 <Text>{snapshot.issueDate}</Text>
               </View>
-              <View style={styles.metaLine}>
-                <Text style={styles.metaLabel}>Due date</Text>
-                <Text>{snapshot.dueDate}</Text>
-              </View>
-              {snapshot.paymentTermsDays !== null && (
+              {snapshot.dueDate && (
+                <View style={styles.metaLine}>
+                  <Text style={styles.metaLabel}>{dueLabel}</Text>
+                  <Text>{snapshot.dueDate}</Text>
+                </View>
+              )}
+              {reference && (
+                <View style={styles.metaLine}>
+                  <Text style={styles.metaLabel}>Ref</Text>
+                  <Text>{reference}</Text>
+                </View>
+              )}
+              {snapshot.paymentTermsDays != null && (
                 <View style={styles.metaLine}>
                   <Text style={styles.metaLabel}>Terms</Text>
                   <Text>{paymentTermsLabel(snapshot.paymentTermsDays)}</Text>
@@ -316,7 +333,7 @@ export function InvoicePdf({
               <Text style={styles.colPrice}>
                 {fmt(line.unitPriceMinor, currency)}
               </Text>
-              <Text style={styles.colDisc}>{pct(line.discountBps)}</Text>
+              <Text style={styles.colDisc}>{pct(line.discountBps ?? 0)}</Text>
               <Text style={styles.colTax}>{pct(line.taxRateBps)}</Text>
               <Text style={styles.colAmount}>
                 {fmt(line.lineTotalMinor, currency)}
@@ -333,7 +350,7 @@ export function InvoicePdf({
           {discounted && (
             <View style={styles.totalRow}>
               <Text style={styles.muted}>Discount</Text>
-              <Text>-{fmt(snapshot.totals.discountTotalMinor, currency)}</Text>
+              <Text>-{fmt(snapshot.totals.discountTotalMinor ?? "0", currency)}</Text>
             </View>
           )}
           <View style={styles.totalRow}>
@@ -384,6 +401,9 @@ export async function renderInvoicePdf(params: {
   watermark: boolean;
   logoUrl?: string | null;
   template?: PdfTemplateId;
+  docTitle?: string;
+  dueLabel?: string;
+  reference?: string | null;
 }): Promise<Buffer> {
   return renderToBuffer(<InvoicePdf {...params} />);
 }

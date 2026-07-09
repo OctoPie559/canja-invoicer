@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import {
   createTaxRateAction,
   deleteTaxRateAction,
+  updateDocNumberingAction,
   updateInvoiceDefaultsAction,
   updateInvoiceNumberingAction,
   updatePaymentTermsDefaultAction,
@@ -359,6 +360,81 @@ export function InvoiceDefaultsSettings({
       </Button>
       <p className="text-xs text-muted-foreground">
         Prefilled into every new invoice; editable per document.
+      </p>
+    </form>
+  );
+}
+
+/** Estimate / credit-note numbering (same forward-only counter rule). */
+export function DocNumberingSettings({
+  organizationId,
+  doc,
+  label,
+  prefix,
+  nextNumber,
+  version,
+  canManage,
+}: {
+  organizationId: string;
+  doc: "estimate" | "credit_note";
+  label: string;
+  prefix: string;
+  nextNumber: number;
+  version: number;
+  canManage: boolean;
+}) {
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    updateDocNumberingAction.bind(null, organizationId),
+    { error: null },
+  );
+  const preview = `${prefix}-${String(nextNumber).padStart(6, "0")}`;
+  if (!canManage) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Next {label.toLowerCase()}:{" "}
+        <span className="font-mono font-medium text-foreground">{preview}</span>
+      </p>
+    );
+  }
+  return (
+    <form action={action} className="space-y-3">
+      {state.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
+      <input type="hidden" name="version" value={version} />
+      <input type="hidden" name="doc" value={doc} />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor={`${doc}-prefix`}>Prefix</Label>
+          <Input
+            id={`${doc}-prefix`}
+            name="prefix"
+            defaultValue={prefix}
+            className="w-28"
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${doc}-next`}>Next number</Label>
+          <Input
+            id={`${doc}-next`}
+            name="nextNumber"
+            type="number"
+            min={nextNumber}
+            defaultValue={nextNumber}
+            className="w-32"
+            required
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Next {label.toLowerCase()} will be{" "}
+        <span className="font-mono">{preview}</span>.
       </p>
     </form>
   );

@@ -49,7 +49,7 @@ export function OrgSwitcher({
                   height={32}
                   src = {logoUrl}
                   alt = {current?.name ?? "Organization logo"}
-                  className = "size-8 rounded-md"
+                  className = "size-8 rounded-md group-data-[collapsible=icon]:size-6.5"
                   loading = "eager"
                 />
               ) : (
@@ -78,9 +78,20 @@ export function OrgSwitcher({
             {orgs.map((org) => (
               <DropdownMenuItem key={org.id} asChild>
                 <Link href={`/orgs/${org.id}`}>
-                  <span className="flex size-6 items-center justify-center rounded-sm bg-primary/10 text-xs font-semibold text-primary">
-                    {org.name[0]?.toUpperCase()}
-                  </span>
+                  {logoUrl ? (
+                    <Image
+                      width={24}
+                      height={24}
+                      src={logoUrl}
+                      alt={org.name}
+                      className="size-6 rounded-sm"
+                      loading="eager"
+                    />
+                  ) : (
+                    <span className="flex size-6 items-center justify-center rounded-sm bg-primary/10 text-xs font-semibold text-primary">
+                      {org.name[0]?.toUpperCase()}
+                    </span>
+                  )}
                   <span className="flex-1 truncate">{org.name}</span>
                   {org.id === currentOrgId && <Check className="size-4" />}
                 </Link>

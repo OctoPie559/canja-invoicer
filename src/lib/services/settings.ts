@@ -19,6 +19,8 @@ import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
 import { getMembership } from "./organizations";
 import {
+  updateDocNumberingSchema,
+  type UpdateDocNumberingInput,
   createTaxRateSchema,
   deleteTaxRateSchema,
   updateTaxRateSchema,
@@ -43,6 +45,10 @@ export interface InvoiceSettings {
   baseCurrency: string;
   invoicePrefix: string;
   invoiceNextNumber: number;
+  estimatePrefix: string;
+  estimateNextNumber: number;
+  creditNotePrefix: string;
+  creditNoteNextNumber: number;
   defaultPaymentTermsDays: number;
   defaultTaxRateId: string | null;
   defaultInvoiceNotes: string | null;
@@ -59,6 +65,10 @@ export async function getInvoiceSettings(
       baseCurrency: organizationSettings.baseCurrency,
       invoicePrefix: organizationSettings.invoicePrefix,
       invoiceNextNumber: organizationSettings.invoiceNextNumber,
+      estimatePrefix: organizationSettings.estimatePrefix,
+      estimateNextNumber: organizationSettings.estimateNextNumber,
+      creditNotePrefix: organizationSettings.creditNotePrefix,
+      creditNoteNextNumber: organizationSettings.creditNoteNextNumber,
       defaultPaymentTermsDays: organizationSettings.defaultPaymentTermsDays,
       defaultTaxRateId: organizationSettings.defaultTaxRateId,
       defaultInvoiceNotes: organizationSettings.defaultInvoiceNotes,
@@ -339,5 +349,32 @@ export async function updateInvoiceDefaults(
       defaultInvoiceTerms: data.defaultInvoiceTerms ?? null,
     },
     ["defaultTaxRateId", "defaultInvoiceNotes", "defaultInvoiceTerms"],
+  );
+}
+
+/** Estimate / credit-note numbering — same forward-only rule as invoices. */
+export async function updateDocNumbering(
+  db: Database,
+  ctx: ActorContext,
+  input: UpdateDocNumberingInput,
+): Promise<void> {
+  const data = updateDocNumberingSchema.parse(input);
+  const fields =
+    data.doc === "estimate"
+      ? ({ prefix: "estimatePrefix", next: "estimateNextNumber" } as const)
+      : ({ prefix: "creditNotePrefix", next: "creditNoteNextNumber" } as const);
+  await updateSettingsRow(
+    db,
+    ctx,
+    data.version,
+    { [fields.prefix]: data.prefix, [fields.next]: data.nextNumber },
+    [fields.prefix, fields.next],
+    (before) => {
+      if (data.nextNumber < before[fields.next]) {
+        throw new ValidationError(
+          `Next number cannot go below ${before[fields.next]}`,
+        );
+      }
+    },
   );
 }

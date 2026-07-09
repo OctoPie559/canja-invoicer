@@ -27,6 +27,7 @@ import {
   createTaxRate,
   getInvoiceSettings,
   listTaxRates,
+  updateDocNumbering,
   updateInvoiceDefaults,
   updateInvoiceNumbering,
   updatePaymentTermsDefault,
@@ -637,6 +638,43 @@ describe("settings service (tax rates + numbering)", () => {
     await deleteTaxRate(db, actorInA(), { id: taxRateId, version: rate.version });
     settings = await getInvoiceSettings(db, fx.orgA);
     expect(settings.defaultTaxRateId).toBeNull();
+  });
+
+  it("estimate/credit-note counters: prefix updates, forward-only", async () => {
+    let settings = await getInvoiceSettings(db, fx.orgA);
+    await updateDocNumbering(db, actorInA(), {
+      version: settings.version,
+      doc: "estimate",
+      prefix: "QT",
+      nextNumber: settings.estimateNextNumber + 5,
+    });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    expect(settings.estimatePrefix).toBe("QT");
+    await expect(
+      updateDocNumbering(db, actorInA(), {
+        version: settings.version,
+        doc: "estimate",
+        prefix: "QT",
+        nextNumber: settings.estimateNextNumber - 1,
+      }),
+    ).rejects.toThrow(ValidationError);
+    // bump the CN counter first so "backwards" is a real number (not a
+    // Zod min(1) rejection)
+    await updateDocNumbering(db, actorInA(), {
+      version: settings.version,
+      doc: "credit_note",
+      prefix: "CR",
+      nextNumber: settings.creditNoteNextNumber + 3,
+    });
+    settings = await getInvoiceSettings(db, fx.orgA);
+    await expect(
+      updateDocNumbering(db, actorInA(), {
+        version: settings.version,
+        doc: "credit_note",
+        prefix: "CR",
+        nextNumber: settings.creditNoteNextNumber - 1,
+      }),
+    ).rejects.toThrow(ValidationError);
   });
 
   it("renames the organization with an audit trail; viewers cannot", async () => {
