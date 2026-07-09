@@ -233,7 +233,9 @@ export default async function InvoiceWorkspacePage({
               balanceDue={balance.toString()}
             />
           )}
-          {!draft && can(role, "invoice.send") && status !== "void" && (
+          {/* once past due the reminder takes over — a single, unambiguous
+              "chase this" action instead of Send + Reminder side by side */}
+          {!draft && !pastDue && can(role, "invoice.send") && status !== "void" && (
             <SendInvoiceDialog
               organizationId={orgId}
               invoiceId={invoiceId}
