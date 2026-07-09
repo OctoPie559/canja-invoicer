@@ -2,6 +2,7 @@ import { render } from "@react-email/render";
 import { emailAssetBaseUrl } from "@/lib/config";
 import { InvitationEmail } from "../../../emails/invitation";
 import { InvoiceSendEmail } from "../../../emails/invoice-send";
+import { InvoiceReminderEmail } from "../../../emails/invoice-reminder";
 import { EstimateSendEmail } from "../../../emails/estimate-send";
 import { EstimateResponseEmail } from "../../../emails/estimate-response";
 import { PasswordResetEmail } from "../../../emails/password-reset";
@@ -83,7 +84,10 @@ export async function invitationEmail(params: {
 
 import { Money } from "@/lib/domain/money";
 import { renderInvoicePdf } from "@/lib/pdf/invoice";
-import type { InvoiceEmailBuilder } from "@/lib/services/invoices";
+import type {
+  InvoiceEmailBuilder,
+  InvoiceReminderBuilder,
+} from "@/lib/services/invoices";
 import type {
   EstimateEmailBuilder,
   EstimateResponseBuilder,
@@ -186,6 +190,31 @@ export const estimateResponseEmail: EstimateResponseBuilder = async ({
   );
   return {
     subject: `Quote ${snapshot.displayNumber} was ${decision} by ${customerName}`,
+    ...body,
+  };
+};
+
+export const invoiceReminderEmail: InvoiceReminderBuilder = async ({
+  snapshot,
+  balanceDue,
+  dueDate,
+  daysOverdue,
+  publicUrl,
+  organizationName,
+}) => {
+  const body = await renderBoth(
+    <InvoiceReminderEmail
+      organizationName={organizationName}
+      displayNumber={snapshot.displayNumber}
+      balanceDue={balanceDue}
+      dueDate={dueDate}
+      daysOverdue={daysOverdue}
+      url={publicUrl}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  return {
+    subject: `Reminder: invoice ${snapshot.displayNumber} from ${organizationName}`,
     ...body,
   };
 };

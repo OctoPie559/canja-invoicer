@@ -73,3 +73,32 @@ export function isVoidable(status: InvoiceStatus): boolean {
 export function isOutstanding(status: InvoiceStatus): boolean {
   return status === "sent" || status === "partial" || status === "overdue";
 }
+
+/**
+ * A sent/partial invoice is past due once its due date has passed —
+ * computed from the date directly, independent of whether the daily
+ * overdue cron has flipped the stored status yet. ISO yyyy-mm-dd strings
+ * (lexicographic compare is date-correct).
+ */
+export function isPastDue(
+  status: InvoiceStatus,
+  dueDate: string | null,
+  today: string,
+): boolean {
+  return (
+    (status === "sent" || status === "partial") &&
+    !!dueDate &&
+    dueDate < today
+  );
+}
+
+/** Whole days a due date is past `today`; 0 if not yet due. ISO strings. */
+export function daysPastDue(
+  dueDate: string | null,
+  today: string,
+): number {
+  if (!dueDate || dueDate >= today) return 0;
+  return Math.floor(
+    (Date.parse(today) - Date.parse(dueDate)) / 86_400_000,
+  );
+}

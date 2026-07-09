@@ -11,6 +11,7 @@
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
 import { InvoiceSendEmail } from "../emails/invoice-send";
+import { InvoiceReminderEmail } from "../emails/invoice-reminder";
 import { EstimateSendEmail } from "../emails/estimate-send";
 import { EstimateResponseEmail } from "../emails/estimate-response";
 import { PasswordResetEmail } from "../emails/password-reset";
@@ -148,6 +149,25 @@ async function main() {
     "INV-000042",
     "KES 3,480.00",
     "View invoice",
+    "static/color-logo.png",
+  ]);
+
+  const rem = await renderBoth(
+    <InvoiceReminderEmail
+      organizationName="Njogu-ini Studios"
+      displayNumber="INV-000002"
+      balanceDue="KES 1,740.00"
+      dueDate="2026-07-08"
+      daysOverdue={2}
+      url="https://app.example/i/tok"
+      baseUrl=""
+    />,
+  );
+  assert("invoice reminder", rem.html, rem.text, [
+    "INV-000002",
+    "KES 1,740.00",
+    "Payment reminder",
+    "past due",
     "static/color-logo.png",
   ]);
 

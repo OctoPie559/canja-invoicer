@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { BadgeCheck, Ban, Send } from "lucide-react";
+import { BadgeCheck, Ban, BellRing, Send } from "lucide-react";
 import {
   issueInvoiceAction,
   sendInvoiceAction,
+  sendInvoiceReminderAction,
   voidInvoiceAction,
 } from "@/app/actions/invoices";
 import type { ActionState } from "@/app/actions/organizations";
@@ -304,6 +305,106 @@ export function SendInvoiceDialog({
               disabled={pending || selected.length === 0}
             >
               {pending ? "Sending…" : "Send invoice"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function SendReminderDialog({
+  organizationId,
+  invoiceId,
+  displayNumber,
+  daysOverdue,
+  contacts,
+}: {
+  organizationId: string;
+  invoiceId: string;
+  displayNumber: string;
+  /** 0 if not yet past due (button still allowed for a pre-due nudge) */
+  daysOverdue: number;
+  contacts: Array<{ id: string; name: string; email: string | null }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const sendable = contacts.filter((c) => c.email);
+  const [selected, setSelected] = useState<string[]>(() =>
+    sendable.map((c) => c.id),
+  );
+  const [state, action, pending] = useActionState<ActionState, FormData>(
+    sendInvoiceReminderAction.bind(null, organizationId),
+    { error: null },
+  );
+  const toggle = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <BellRing />
+          Send reminder
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form action={action} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Send a payment reminder</DialogTitle>
+            <DialogDescription>
+              Emails the customer a follow-up for {displayNumber}
+              {daysOverdue > 0
+                ? ` — now ${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue`
+                : ""}
+              , showing the current balance and a link to view and pay.
+            </DialogDescription>
+          </DialogHeader>
+          {state.error && (
+            <Alert variant="destructive">
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          )}
+          <input type="hidden" name="id" value={invoiceId} />
+          <input
+            type="hidden"
+            name="contactIds"
+            value={JSON.stringify(selected)}
+          />
+          {sendable.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              None of this customer&apos;s contact persons has an email
+              address. Add one on the customer&apos;s page first.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {sendable.map((c) => (
+                <li key={c.id}>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(c.id)}
+                      onChange={() => toggle(c.id)}
+                      className="size-4 accent-primary"
+                    />
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-muted-foreground">{c.email}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending || selected.length === 0}>
+              {pending ? "Sending…" : "Send reminder"}
             </Button>
           </DialogFooter>
         </form>
