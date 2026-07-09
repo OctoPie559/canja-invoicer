@@ -68,3 +68,16 @@ export const updateInvoiceDefaultsSchema = z.object({
 export type UpdateInvoiceDefaultsInput = z.input<
   typeof updateInvoiceDefaultsSchema
 >;
+
+export const updateDocNumberingSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  doc: z.enum(["estimate", "credit_note"]),
+  prefix: z
+    .string()
+    .trim()
+    .min(1, "Prefix is required")
+    .max(10)
+    .regex(/^[A-Za-z0-9-]+$/, "Letters, numbers and dashes only"),
+  nextNumber: z.coerce.number().int().min(1),
+});
+export type UpdateDocNumberingInput = z.input<typeof updateDocNumberingSchema>;

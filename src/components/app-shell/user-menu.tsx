@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Settings } from "lucide-react";
+import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +43,12 @@ export function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
-        <span className="hidden text-right sm:block">
+        <Avatar className="size-9">
+          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+            {initials(name)}
+          </AvatarFallback>
+        </Avatar>
+        <span className="hidden text-left sm:block">
           <span className="block text-sm leading-tight font-semibold text-foreground">
             {name}
           </span>
@@ -51,12 +56,7 @@ export function UserMenu({
             {email}
           </span>
         </span>
-        <Avatar className="size-9">
-          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-            {initials(name)}
-          </AvatarFallback>
-        </Avatar>
-        <ChevronDown className="size-4 text-muted-foreground" />
+        <ChevronsUpDown className="size-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="flex items-center justify-between gap-2">

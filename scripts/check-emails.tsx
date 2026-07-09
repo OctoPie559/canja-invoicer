@@ -11,6 +11,8 @@
 import { render } from "@react-email/render";
 import { InvitationEmail } from "../emails/invitation";
 import { InvoiceSendEmail } from "../emails/invoice-send";
+import { EstimateSendEmail } from "../emails/estimate-send";
+import { EstimateResponseEmail } from "../emails/estimate-response";
 import { PasswordResetEmail } from "../emails/password-reset";
 import { SubscriptionConfirmation } from "../emails/subscription-confirmation";
 import { SubscriptionUpdate } from "../emails/subscription-update";
@@ -146,6 +148,40 @@ async function main() {
     "INV-000042",
     "KES 3,480.00",
     "View invoice",
+    "static/color-logo.png",
+  ]);
+
+  const est = await renderBoth(
+    <EstimateSendEmail
+      organizationName="Njogu-ini Studios"
+      displayNumber="EST-000007"
+      total="KES 3,480.00"
+      validUntil="2026-08-07"
+      url="https://app.example/e/tok"
+      baseUrl=""
+    />,
+  );
+  assert("estimate send", est.html, est.text, [
+    "EST-000007",
+    "KES 3,480.00",
+    "respond",
+    "static/color-logo.png",
+  ]);
+
+  const resp = await renderBoth(
+    <EstimateResponseEmail
+      decision="accepted"
+      displayNumber="EST-000007"
+      customerName="Acme Ltd"
+      total="KES 3,480.00"
+      url="https://app.example/orgs/o/estimates/e"
+      baseUrl=""
+    />,
+  );
+  assert("estimate response", resp.html, resp.text, [
+    "EST-000007",
+    "Acme Ltd",
+    "accepted",
     "static/color-logo.png",
   ]);
 

@@ -9,7 +9,7 @@ export interface SnapshotLine {
   description: string;
   quantity: string;
   unitPriceMinor: string;
-  discountBps: number;
+  discountBps?: number;
   taxRateBps: number;
   lineTotalMinor: string;
   position: number;
@@ -48,16 +48,17 @@ export interface InvoiceSnapshot {
   lines: SnapshotLine[];
   totals: {
     subtotalMinor: string;
-    discountTotalMinor: string;
+    discountTotalMinor?: string;
     taxTotalMinor: string;
     totalMinor: string;
   };
   currency: string;
   baseCurrency: string;
-  fxRateToBase: string | null;
+  fxRateToBase?: string | null;
   issueDate: string;
-  dueDate: string;
-  paymentTermsDays: number | null;
+  /** invoices: due date; estimates map their expiry here for rendering */
+  dueDate?: string;
+  paymentTermsDays?: number | null;
   displayNumber: string;
   notes: string | null;
   terms: string | null;

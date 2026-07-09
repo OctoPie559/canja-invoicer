@@ -3,7 +3,6 @@ import { listUserOrganizations } from "@/lib/services/organizations";
 import { requireMembership } from "@/lib/transport/org";
 import { requireSession } from "@/lib/transport/session";
 import { AppSidebar } from "@/components/app-shell/app-sidebar";
-import { UserMenu } from "@/components/app-shell/user-menu";
 import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
@@ -44,21 +43,13 @@ export default async function OrgShellLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebar orgs={orgs} currentOrgId={orgId} logoUrl={logoUrl} />
+      <AppSidebar orgs={orgs} currentOrgId={orgId} logoUrl={logoUrl} session={session} />
       <SidebarInset className="bg-muted/40">
         <header className="flex h-14 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
-          <div className="ml-auto">
-            <UserMenu
-              name={session.user.name}
-              email={session.user.email}
-              emailVerified={session.user.emailVerified}
-              settingsHref={`/orgs/${orgId}/settings`}
-            />
-          </div>
         </header>
-        <main className="w-full max-w-6xl flex-1 p-3">{children}</main>
+        <main className="w-full max-w-7xl flex-1 p-6">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

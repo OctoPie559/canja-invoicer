@@ -1,13 +1,16 @@
-import { and, count, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import {
+  auditLog,
   customers,
   invoices,
   organizationSettings,
   payments,
   products,
+  user,
 } from "@/lib/db/schema";
 import { Money } from "@/lib/domain/money";
+import { issuedCreditsByInvoice } from "./credit-notes";
 
 /**
  * Financial overview (dashboard tiles). Aggregates are expressed in the
@@ -48,6 +51,7 @@ export async function getFinancialOverview(
 
   const rows = await db
     .select({
+      id: invoices.id,
       status: invoices.status,
       currency: invoices.currency,
       fxRateToBase: invoices.fxRateToBase,
@@ -61,6 +65,9 @@ export async function getFinancialOverview(
         isNull(invoices.deletedAt),
       ),
     );
+  // slice 6: outstanding is the EFFECTIVE balance — issued credit notes
+  // reduce what a customer owes exactly like cash (drafts/voids don't)
+  const credits = await issuedCreditsByInvoice(db, organizationId);
 
   let outstanding = Money.zero(base);
   let overdue = Money.zero(base);
@@ -84,8 +91,10 @@ export async function getFinancialOverview(
     }
 
     const paid = toBase(row.amountPaidMinor, row.currency, row.fxRateToBase);
+    const rawRemaining =
+      row.totalMinor - row.amountPaidMinor - (credits.get(row.id) ?? 0n);
     const remaining = toBase(
-      row.totalMinor - row.amountPaidMinor,
+      rawRemaining < 0n ? 0n : rawRemaining,
       row.currency,
       row.fxRateToBase,
     );
@@ -295,6 +304,7 @@ export async function getStatusBreakdown(
 
   const rows = await db
     .select({
+      id: invoices.id,
       status: invoices.status,
       currency: invoices.currency,
       fxRateToBase: invoices.fxRateToBase,
@@ -308,6 +318,9 @@ export async function getStatusBreakdown(
         isNull(invoices.deletedAt),
       ),
     );
+  // slice 6: outstanding is the EFFECTIVE balance — issued credit notes
+  // reduce what a customer owes exactly like cash (drafts/voids don't)
+  const credits = await issuedCreditsByInvoice(db, organizationId);
 
   const byStatus = new Map<string, StatusBreakdownRow>();
   let unconvertibleCount = 0;
@@ -319,8 +332,12 @@ export async function getStatusBreakdown(
       outstanding: Money.zero(base),
     };
     const total = toBase(row.totalMinor ?? 0n, row.currency, row.fxRateToBase);
+    const rawRemaining =
+      (row.totalMinor ?? 0n) -
+      (row.amountPaidMinor ?? 0n) -
+      (credits.get(row.id) ?? 0n);
     const remaining = toBase(
-      (row.totalMinor ?? 0n) - (row.amountPaidMinor ?? 0n),
+      rawRemaining < 0n ? 0n : rawRemaining,
       row.currency,
       row.fxRateToBase,
     );
@@ -369,6 +386,7 @@ export async function getAgingBuckets(
 
   const rows = await db
     .select({
+      id: invoices.id,
       dueDate: invoices.dueDate,
       currency: invoices.currency,
       fxRateToBase: invoices.fxRateToBase,
@@ -383,10 +401,15 @@ export async function getAgingBuckets(
         inArray(invoices.status, ["sent", "partial", "overdue"]),
       ),
     );
+  const credits = await issuedCreditsByInvoice(db, organizationId);
   const todayMs = new Date(`${today}T00:00:00Z`).getTime();
   for (const row of rows) {
+    const rawRemaining =
+      (row.totalMinor ?? 0n) -
+      (row.amountPaidMinor ?? 0n) -
+      (credits.get(row.id) ?? 0n);
     const remaining = toBase(
-      (row.totalMinor ?? 0n) - (row.amountPaidMinor ?? 0n),
+      rawRemaining < 0n ? 0n : rawRemaining,
       row.currency,
       row.fxRateToBase,
     );
@@ -434,6 +457,7 @@ export async function getTopCustomers(
 
   const rows = await db
     .select({
+      id: invoices.id,
       customerId: invoices.customerId,
       name: customers.name,
       status: invoices.status,
@@ -459,6 +483,7 @@ export async function getTopCustomers(
       ),
     );
 
+  const credits = await issuedCreditsByInvoice(db, organizationId);
   const byCustomer = new Map<string, TopCustomerRow>();
   let unconvertibleCount = 0;
   for (const row of rows) {
@@ -469,8 +494,12 @@ export async function getTopCustomers(
       outstanding: Money.zero(base),
     };
     const total = toBase(row.totalMinor ?? 0n, row.currency, row.fxRateToBase);
+    const rawRemaining =
+      (row.totalMinor ?? 0n) -
+      (row.amountPaidMinor ?? 0n) -
+      (credits.get(row.id) ?? 0n);
     const remaining = toBase(
-      (row.totalMinor ?? 0n) - (row.amountPaidMinor ?? 0n),
+      rawRemaining < 0n ? 0n : rawRemaining,
       row.currency,
       row.fxRateToBase,
     );
@@ -498,4 +527,29 @@ export async function getCollectedThisMonth(
 ): Promise<{ amount: Money; unconvertibleCount: number }> {
   const { months, unconvertibleCount } = await getCashFlow(db, organizationId, 1);
   return { amount: months[0].collected, unconvertibleCount };
+}
+
+/** Org-wide activity timeline (brief §5.3) — the org's audit trail, newest
+ * first, with actor names joined. Reads may bypass services (§1.1); this
+ * lives here so the org and per-entity timelines share one shape. */
+export async function getOrgTimeline(
+  db: Database,
+  organizationId: string,
+  limit = 100,
+) {
+  return db
+    .select({
+      id: auditLog.id,
+      action: auditLog.action,
+      actorType: auditLog.actorType,
+      actorId: auditLog.actorId,
+      actorName: user.name,
+      changes: auditLog.changes,
+      createdAt: auditLog.createdAt,
+    })
+    .from(auditLog)
+    .leftJoin(user, eq(user.id, auditLog.actorId))
+    .where(eq(auditLog.organizationId, organizationId))
+    .orderBy(desc(auditLog.createdAt))
+    .limit(limit);
 }
