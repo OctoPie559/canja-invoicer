@@ -11,6 +11,7 @@ import {
   estimates,
   invoiceLineItems,
   invoices,
+  member,
   organization,
   organizationBranding,
   organizationSettings,
@@ -923,53 +924,173 @@ export async function recordEstimateView(
   });
 }
 
+/** Vendor-facing notification when a customer responds to a quote. */
+export type EstimateResponseBuilder = (params: {
+  decision: "accepted" | "declined";
+  snapshot: InvoiceSnapshot;
+  customerName: string;
+  workspaceUrl: string;
+}) => Promise<RenderedEstimateEmail>;
+
+const plainEstimateResponse: EstimateResponseBuilder = async ({
+  decision,
+  snapshot,
+  customerName,
+  workspaceUrl,
+}) => ({
+  subject: `Quote ${snapshot.displayNumber} was ${decision} by ${customerName}`,
+  text:
+    `${customerName} ${decision} quote ${snapshot.displayNumber} ` +
+    `(${Money.fromMinor(BigInt(snapshot.totals.totalMinor), snapshot.currency).toString()}).` +
+    `\\n\\nOpen it: ${workspaceUrl}`,
+});
+
+export interface PublicDecisionDeps {
+  emailSender?: EmailSender;
+  baseUrl?: string;
+  buildNotification?: EstimateResponseBuilder;
+}
+
 /**
  * The customer's own accept/decline from the public link. Allowed only while
  * the quote awaits a decision (sent/viewed); accept is refused past expiry.
- * Recorded as a CUSTOMER actor with a "via public link" reason.
+ * Recorded as a CUSTOMER actor with a "via public link" reason. On success a
+ * notification email fires to the org (branding contact, else the owner) —
+ * after commit, so a failed send never rolls the decision back, and exactly
+ * once per quote (the awaiting-decision gate blocks any repeat).
  */
 export async function recordPublicEstimateDecision(
   db: Database,
   token: string,
   decision: "accepted" | "declined",
   meta?: { ip?: string; userAgent?: string },
+  deps: PublicDecisionDeps = {},
 ): Promise<{ status: EstimateStatus }> {
   const est = await estimateByToken(db, token);
   if (!est || est.status === "draft" || !est.snapshot) {
     throw new NotFoundError("Estimate");
   }
   const ctx = customerActor(est.organizationId, meta);
-  return withOrgTransaction(db, est.organizationId, async (tx) => {
-    const locked = await lockEstimate(tx, est.organizationId, est.id);
-    if (!isAwaitingDecision(locked.status as EstimateStatus)) {
-      throw new ValidationError("This quote has already been responded to");
+  const emailSender = deps.emailSender ?? getEmailSender();
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  const buildNotification = deps.buildNotification ?? plainEstimateResponse;
+
+  const prepared = await withOrgTransaction(
+    db,
+    est.organizationId,
+    async (tx) => {
+      const locked = await lockEstimate(tx, est.organizationId, est.id);
+      if (!isAwaitingDecision(locked.status as EstimateStatus)) {
+        throw new ValidationError("This quote has already been responded to");
+      }
+      if (
+        decision === "accepted" &&
+        locked.expiryDate &&
+        locked.expiryDate < new Date().toISOString().slice(0, 10)
+      ) {
+        throw new ValidationError(
+          "This quote has expired — please ask the sender for a new one",
+        );
+      }
+      assertEstimateTransition(locked.status as EstimateStatus, decision);
+      await tx
+        .update(estimates)
+        .set({ status: decision, updatedAt: new Date() })
+        .where(eq(estimates.id, locked.id));
+      await writeAudit(tx, ctx, {
+        action: `estimate.${decision}`,
+        entityType: "estimate",
+        entityId: locked.id,
+        changes: {
+          before: { status: locked.status },
+          after: { status: decision },
+        },
+        reason: "via public link",
+      });
+
+      // notification recipient: the business billing email, else the owner
+      const snapshot = parseInvoiceSnapshot(locked.snapshot);
+      const [branding] = await tx
+        .select({ contactEmail: organizationBranding.contactEmail })
+        .from(organizationBranding)
+        .where(eq(organizationBranding.organizationId, est.organizationId));
+      const [owner] = await tx
+        .select({ email: user.email })
+        .from(member)
+        .innerJoin(user, eq(user.id, member.userId))
+        .where(
+          and(
+            eq(member.organizationId, est.organizationId),
+            eq(member.role, "owner"),
+          ),
+        )
+        .limit(1);
+      const recipient = branding?.contactEmail ?? owner?.email ?? null;
+      const messageId = recipient ? newId() : null;
+      if (recipient && messageId) {
+        await tx.insert(emailMessages).values({
+          id: messageId,
+          organizationId: est.organizationId,
+          type: "estimate_response",
+          recipient,
+          subject: `Quote ${snapshot.displayNumber} ${decision}`,
+          entityType: "estimate",
+          entityId: locked.id,
+          status: "queued",
+        });
+      }
+      return {
+        status: decision,
+        snapshot,
+        customerName: snapshot.customer.name,
+        recipient,
+        messageId,
+      };
+    },
+  );
+
+  // side effect after commit — the decision stands regardless of the send
+  if (prepared.recipient && prepared.messageId) {
+    const args = {
+      decision,
+      snapshot: prepared.snapshot,
+      customerName: prepared.customerName,
+      workspaceUrl: `${baseUrl}/orgs/${est.organizationId}/estimates/${est.id}`,
+    };
+    let rendered: RenderedEstimateEmail;
+    try {
+      rendered = await buildNotification(args);
+    } catch {
+      rendered = await plainEstimateResponse(args);
     }
-    if (
-      decision === "accepted" &&
-      locked.expiryDate &&
-      locked.expiryDate < new Date().toISOString().slice(0, 10)
-    ) {
-      throw new ValidationError(
-        "This quote has expired — please ask the sender for a new one",
+    let providerMessageId: string | null = null;
+    let sendError: string | null = null;
+    try {
+      ({ providerMessageId } = await emailSender.send({
+        to: prepared.recipient,
+        ...rendered,
+      }));
+    } catch (error) {
+      sendError = maskPiiInText(
+        error instanceof Error ? error.message : String(error),
+      ).slice(0, 500);
+    }
+    await db
+      .update(emailMessages)
+      .set({
+        status: providerMessageId ? "sent" : "send_failed",
+        providerMessageId,
+        error: sendError,
+      })
+      .where(
+        and(
+          eq(emailMessages.id, prepared.messageId),
+          eq(emailMessages.organizationId, est.organizationId),
+        ),
       );
-    }
-    assertEstimateTransition(locked.status as EstimateStatus, decision);
-    await tx
-      .update(estimates)
-      .set({ status: decision, updatedAt: new Date() })
-      .where(eq(estimates.id, locked.id));
-    await writeAudit(tx, ctx, {
-      action: `estimate.${decision}`,
-      entityType: "estimate",
-      entityId: locked.id,
-      changes: {
-        before: { status: locked.status },
-        after: { status: decision },
-      },
-      reason: "via public link",
-    });
-    return { status: decision };
-  });
+  }
+
+  return { status: prepared.status };
 }
 
 // ---------------------------------------------------------------------------

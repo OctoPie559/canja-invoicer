@@ -350,7 +350,11 @@ describe("estimate public lifecycle + send (Zoho-style)", () => {
   it("public accept/decline via token; second response and bad token rejected", async () => {
     const id = await issued();
     const token = (await getEstimate(db, fx.orgA, id))!.publicToken!;
-    const res = await recordPublicEstimateDecision(db, token, "declined");
+    const { sent, sender } = fakeSender();
+    const res = await recordPublicEstimateDecision(db, token, "declined", undefined, {
+      emailSender: sender,
+      baseUrl: "https://app.example",
+    });
     expect(res.status).toBe("declined");
     const [audit] = await db
       .select()
@@ -360,6 +364,14 @@ describe("estimate public lifecycle + send (Zoho-style)", () => {
       );
     expect(audit.actorType).toBe("customer");
     expect(audit.reason).toBe("via public link");
+
+    // the org is notified (owner email, no branding contact set) with a
+    // logged email_messages row of type estimate_response
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toContain("declined");
+    expect(sent[0].text).toContain("https://app.example/orgs/");
+    const log = await listEstimateEmails(db, fx.orgA, id);
+    expect(log.some((e) => e.status === "sent")).toBe(true);
 
     // already responded → rejected (declined is not awaiting a decision)
     await expect(

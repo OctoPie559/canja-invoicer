@@ -7,6 +7,7 @@ import {
   recordPublicEstimateDecision,
 } from "@/lib/services/estimates";
 import { requestMeta } from "@/lib/transport/session";
+import { estimateResponseEmail } from "@/lib/email/templates";
 import type { ActionState } from "./organizations";
 
 /**
@@ -34,6 +35,7 @@ export async function publicEstimateDecisionAction(
       token,
       decision,
       await requestMeta(),
+      { buildNotification: estimateResponseEmail },
     );
   } catch (error) {
     if (error instanceof DomainError) return { error: error.message };

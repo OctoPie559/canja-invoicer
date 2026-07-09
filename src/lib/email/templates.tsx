@@ -3,6 +3,7 @@ import { emailAssetBaseUrl } from "@/lib/config";
 import { InvitationEmail } from "../../../emails/invitation";
 import { InvoiceSendEmail } from "../../../emails/invoice-send";
 import { EstimateSendEmail } from "../../../emails/estimate-send";
+import { EstimateResponseEmail } from "../../../emails/estimate-response";
 import { PasswordResetEmail } from "../../../emails/password-reset";
 import { VerificationEmail } from "../../../emails/verification";
 import type { EmailMessage } from "./port";
@@ -83,7 +84,10 @@ export async function invitationEmail(params: {
 import { Money } from "@/lib/domain/money";
 import { renderInvoicePdf } from "@/lib/pdf/invoice";
 import type { InvoiceEmailBuilder } from "@/lib/services/invoices";
-import type { EstimateEmailBuilder } from "@/lib/services/estimates";
+import type {
+  EstimateEmailBuilder,
+  EstimateResponseBuilder,
+} from "@/lib/services/estimates";
 
 export const invoiceEmail: InvoiceEmailBuilder = async ({
   snapshot,
@@ -157,5 +161,31 @@ export const estimateEmail: EstimateEmailBuilder = async ({
         contentType: "application/pdf",
       },
     ],
+  };
+};
+
+export const estimateResponseEmail: EstimateResponseBuilder = async ({
+  decision,
+  snapshot,
+  customerName,
+  workspaceUrl,
+}) => {
+  const total = Money.fromMinor(
+    BigInt(snapshot.totals.totalMinor),
+    snapshot.currency,
+  ).toString();
+  const body = await renderBoth(
+    <EstimateResponseEmail
+      decision={decision}
+      displayNumber={snapshot.displayNumber}
+      customerName={customerName}
+      total={total}
+      url={workspaceUrl}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  return {
+    subject: `Quote ${snapshot.displayNumber} was ${decision} by ${customerName}`,
+    ...body,
   };
 };
