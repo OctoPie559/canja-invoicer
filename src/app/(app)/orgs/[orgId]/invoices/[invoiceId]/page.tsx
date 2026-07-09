@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
 import {
+  daysPastDue,
   isEditable,
   isPastDue,
   isVoidable,
@@ -133,12 +134,7 @@ export default async function InvoiceWorkspacePage({
   const today = new Date().toISOString().slice(0, 10);
   const pastDue =
     status === "overdue" || isPastDue(status, invoice.dueDate, today);
-  const daysOverdue =
-    invoice.dueDate && invoice.dueDate < today
-      ? Math.floor(
-          (Date.parse(today) - Date.parse(invoice.dueDate)) / 86_400_000,
-        )
-      : 0;
+  const daysOverdue = daysPastDue(invoice.dueDate, today);
   const snapshot = (invoice.snapshot ?? null) as InvoiceSnapshot | null;
   const currency = invoice.currency;
 

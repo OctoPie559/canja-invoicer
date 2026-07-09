@@ -91,3 +91,14 @@ export function isPastDue(
     dueDate < today
   );
 }
+
+/** Whole days a due date is past `today`; 0 if not yet due. ISO strings. */
+export function daysPastDue(
+  dueDate: string | null,
+  today: string,
+): number {
+  if (!dueDate || dueDate >= today) return 0;
+  return Math.floor(
+    (Date.parse(today) - Date.parse(dueDate)) / 86_400_000,
+  );
+}

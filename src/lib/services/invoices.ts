@@ -23,6 +23,7 @@ import {
 } from "@/lib/domain/invoice-math";
 import {
   assertTransition,
+  daysPastDue,
   isDeletable,
   isEditable,
   isOutstanding,
@@ -1350,12 +1351,7 @@ export async function sendInvoiceReminder(
   );
 
   const today = new Date().toISOString().slice(0, 10);
-  const daysOverdue =
-    prepared.dueDate && prepared.dueDate < today
-      ? Math.floor(
-          (Date.parse(today) - Date.parse(prepared.dueDate)) / 86_400_000,
-        )
-      : 0;
+  const daysOverdue = daysPastDue(prepared.dueDate, today);
   const buildArgs = {
     snapshot: prepared.snapshot,
     balanceDue: prepared.balanceDue,
