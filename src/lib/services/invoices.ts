@@ -25,6 +25,7 @@ import {
   assertTransition,
   isDeletable,
   isEditable,
+  isOutstanding,
   type InvoiceStatus,
 } from "@/lib/domain/invoice-status";
 import {
@@ -51,6 +52,7 @@ import {
   type PdfTemplateId,
 } from "@/lib/domain/pdf-templates";
 import { getMembership } from "./organizations";
+import { issuedCreditsForInvoice } from "./credit-notes";
 import {
   createInvoiceDraftSchema,
   deleteInvoiceDraftSchema,
@@ -953,6 +955,118 @@ export interface SendInvoiceDeps {
   buildEmail?: InvoiceEmailBuilder;
 }
 
+/** Resolve the chosen contact persons to sendable email addresses. */
+async function resolveContactEmails(
+  tx: Transaction,
+  organizationId: string,
+  customerId: string,
+  contactIds: string[],
+): Promise<string[]> {
+  const contacts = await tx
+    .select({ id: customerContacts.id, email: customerContacts.email })
+    .from(customerContacts)
+    .where(
+      and(
+        eq(customerContacts.organizationId, organizationId),
+        eq(customerContacts.customerId, customerId),
+        inArray(customerContacts.id, contactIds),
+        isNull(customerContacts.deletedAt),
+      ),
+    );
+  if (contacts.length !== contactIds.length) {
+    throw new NotFoundError("Contact person");
+  }
+  const recipients = contacts
+    .map((c) => c.email)
+    .filter((e): e is string => Boolean(e));
+  if (recipients.length === 0) {
+    throw new ValidationError(
+      "None of the selected contact persons has an email address",
+    );
+  }
+  return recipients;
+}
+
+/** Sending-domain reputation gate: unverified accounts cannot send. */
+async function assertVerifiedSender(
+  tx: Transaction,
+  actorId: string,
+  noun: string,
+): Promise<void> {
+  const [sender] = await tx
+    .select({ emailVerified: user.emailVerified })
+    .from(user)
+    .where(eq(user.id, actorId));
+  if (!sender?.emailVerified) {
+    throw new ValidationError(
+      `Verify your email address before sending ${noun}`,
+    );
+  }
+}
+
+/** Org-wide hourly cap across ALL invoice emails (sends + reminders). */
+async function assertWithinSendCap(
+  tx: Transaction,
+  organizationId: string,
+  additional: number,
+): Promise<void> {
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const [recent] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.organizationId, organizationId),
+        inArray(emailMessages.type, ["invoice_send", "invoice_reminder"]),
+        gte(emailMessages.createdAt, hourAgo),
+      ),
+    );
+  if ((recent?.count ?? 0) + additional > SEND_HOURLY_CAP) {
+    throw new ValidationError(
+      "Sending limit reached — try again in a little while",
+    );
+  }
+}
+
+/** Post-commit delivery: send each email, record sent/send_failed per row. */
+async function deliverEmails(
+  db: Database,
+  organizationId: string,
+  recipients: string[],
+  messageIds: string[],
+  rendered: RenderedInvoiceEmail,
+  emailSender: EmailSender,
+): Promise<void> {
+  for (let i = 0; i < recipients.length; i++) {
+    let providerMessageId: string | null = null;
+    let sendError: string | null = null;
+    try {
+      ({ providerMessageId } = await emailSender.send({
+        to: recipients[i],
+        ...rendered,
+      }));
+    } catch (error) {
+      // keep the diagnostic on the log row (masked — never raw PII)
+      sendError = maskPiiInText(
+        error instanceof Error ? error.message : String(error),
+      ).slice(0, 500);
+    }
+    await db
+      .update(emailMessages)
+      .set({
+        status: providerMessageId ? "sent" : "send_failed",
+        providerMessageId,
+        error: sendError,
+      })
+      .where(
+        and(
+          eq(emailMessages.id, messageIds[i]),
+          eq(emailMessages.organizationId, organizationId),
+        ),
+      );
+  }
+}
+
 export async function sendInvoice(
   db: Database,
   ctx: ActorContext,
@@ -969,17 +1083,7 @@ export async function sendInvoice(
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "invoice.send");
 
-    // sending-domain reputation gate (brief §6): unverified accounts
-    // cannot put email on the wire
-    const [sender] = await tx
-      .select({ emailVerified: user.emailVerified })
-      .from(user)
-      .where(eq(user.id, ctx.actorId!));
-    if (!sender?.emailVerified) {
-      throw new ValidationError(
-        "Verify your email address before sending invoices",
-      );
-    }
+    await assertVerifiedSender(tx, ctx.actorId!, "invoices");
 
     const invoice = await lockInvoice(tx, ctx.organizationId, data.id);
     if (!SENDABLE.includes(invoice.status as InvoiceStatus)) {
@@ -990,52 +1094,13 @@ export async function sendInvoice(
       );
     }
     const snapshot = parseInvoiceSnapshot(invoice.snapshot);
-
-    // recipients come from the customer's contact persons only
-    const contacts = await tx
-      .select({
-        id: customerContacts.id,
-        firstName: customerContacts.firstName,
-        email: customerContacts.email,
-      })
-      .from(customerContacts)
-      .where(
-        and(
-          eq(customerContacts.organizationId, ctx.organizationId),
-          eq(customerContacts.customerId, invoice.customerId),
-          inArray(customerContacts.id, data.contactIds),
-          isNull(customerContacts.deletedAt),
-        ),
-      );
-    if (contacts.length !== data.contactIds.length) {
-      throw new NotFoundError("Contact person");
-    }
-    const recipients = contacts
-      .map((c) => c.email)
-      .filter((e): e is string => Boolean(e));
-    if (recipients.length === 0) {
-      throw new ValidationError(
-        "None of the selected contact persons has an email address",
-      );
-    }
-
-    // org-wide hourly cap protects the sending domain
-    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const [recent] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(emailMessages)
-      .where(
-        and(
-          eq(emailMessages.organizationId, ctx.organizationId),
-          eq(emailMessages.type, "invoice_send"),
-          gte(emailMessages.createdAt, hourAgo),
-        ),
-      );
-    if ((recent?.count ?? 0) + recipients.length > SEND_HOURLY_CAP) {
-      throw new ValidationError(
-        "Sending limit reached — try again in a little while",
-      );
-    }
+    const recipients = await resolveContactEmails(
+      tx,
+      ctx.organizationId,
+      invoice.customerId,
+      data.contactIds,
+    );
+    await assertWithinSendCap(tx, ctx.organizationId, recipients.length);
 
     const [org] = await tx
       .select({ name: organization.name })
@@ -1099,34 +1164,14 @@ export async function sendInvoice(
       watermark: prepared.watermark,
     });
   }
-  for (let i = 0; i < prepared.recipients.length; i++) {
-    let providerMessageId: string | null = null;
-    let sendError: string | null = null;
-    try {
-      ({ providerMessageId } = await emailSender.send({
-        to: prepared.recipients[i],
-        ...rendered,
-      }));
-    } catch (error) {
-      // keep the diagnostic on the log row (masked — never raw PII)
-      sendError = maskPiiInText(
-        error instanceof Error ? error.message : String(error),
-      ).slice(0, 500);
-    }
-    await db
-      .update(emailMessages)
-      .set({
-        status: providerMessageId ? "sent" : "send_failed",
-        providerMessageId,
-        error: sendError,
-      })
-      .where(
-        and(
-          eq(emailMessages.id, prepared.messageIds[i]),
-          eq(emailMessages.organizationId, ctx.organizationId),
-        ),
-      );
-  }
+  await deliverEmails(
+    db,
+    ctx.organizationId,
+    prepared.recipients,
+    prepared.messageIds,
+    rendered,
+    emailSender,
+  );
   return { recipients: prepared.recipients };
 }
 
@@ -1153,4 +1198,186 @@ export async function listInvoiceEmails(
       ),
     )
     .orderBy(desc(emailMessages.createdAt));
+}
+
+// ---------------------------------------------------------------------------
+// payment reminders (follow-up on outstanding invoices)
+
+/** Reminder email builder — the transport injects the rich JSX version. */
+export type InvoiceReminderBuilder = (params: {
+  snapshot: InvoiceSnapshot;
+  /** current effective balance, formatted */
+  balanceDue: string;
+  dueDate: string;
+  /** 0 when not yet past due */
+  daysOverdue: number;
+  publicUrl: string;
+  organizationName: string;
+  watermark: boolean;
+}) => Promise<RenderedInvoiceEmail>;
+
+const plainInvoiceReminder: InvoiceReminderBuilder = async ({
+  snapshot,
+  balanceDue,
+  dueDate,
+  daysOverdue,
+  publicUrl,
+  organizationName,
+}) => ({
+  subject: `Reminder: invoice ${snapshot.displayNumber}`,
+  text:
+    `${organizationName}: a reminder that invoice ${snapshot.displayNumber} ` +
+    `has a balance of ${balanceDue}, due ${dueDate}` +
+    `${daysOverdue > 0 ? ` (${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue)` : ""}.` +
+    `\n\nView it online: ${publicUrl}`,
+});
+
+export interface SendReminderDeps {
+  emailSender?: EmailSender;
+  baseUrl?: string;
+  buildEmail?: InvoiceReminderBuilder;
+}
+
+/**
+ * Follow-up reminder for an OUTSTANDING invoice (sent/partial/overdue). Same
+ * send discipline as sendInvoice — verified-sender gate, contact-person
+ * recipients, the shared hourly cap, email_messages log, PDF-free nudge that
+ * links to the hosted view. The reminder copy shows the CURRENT effective
+ * balance (total − paid − issued credits), so partial payments and credits
+ * are reflected.
+ */
+export async function sendInvoiceReminder(
+  db: Database,
+  ctx: ActorContext,
+  input: SendInvoiceInput,
+  deps: SendReminderDeps = {},
+): Promise<{ recipients: string[] }> {
+  const data = sendInvoiceSchema.parse(input);
+  if (!ctx.actorId) throw new PermissionError("invoice.send");
+  const emailSender = deps.emailSender ?? getEmailSender();
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  const buildEmail = deps.buildEmail ?? plainInvoiceReminder;
+
+  const prepared = await withOrgTransaction(
+    db,
+    ctx.organizationId,
+    async (tx) => {
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "invoice.send");
+      await assertVerifiedSender(tx, ctx.actorId!, "reminders");
+
+      const invoice = await lockInvoice(tx, ctx.organizationId, data.id);
+      if (!isOutstanding(invoice.status as InvoiceStatus)) {
+        throw new ValidationError(
+          invoice.status === "paid"
+            ? "This invoice is already paid — no reminder needed"
+            : invoice.status === "draft"
+              ? "Issue the invoice before sending a reminder"
+              : "A void invoice cannot be reminded",
+        );
+      }
+      const snapshot = parseInvoiceSnapshot(invoice.snapshot);
+      const recipients = await resolveContactEmails(
+        tx,
+        ctx.organizationId,
+        invoice.customerId,
+        data.contactIds,
+      );
+      await assertWithinSendCap(tx, ctx.organizationId, recipients.length);
+
+      // current effective balance drives the reminder copy
+      const credited = await issuedCreditsForInvoice(
+        tx,
+        ctx.organizationId,
+        invoice.id,
+        invoice.currency,
+      );
+      const balanceMinor =
+        (invoice.totalMinor ?? 0n) -
+        (invoice.amountPaidMinor ?? 0n) -
+        credited.amountMinor;
+      const balanceDue = Money.fromMinor(
+        balanceMinor < 0n ? 0n : balanceMinor,
+        invoice.currency,
+      ).toString();
+
+      const [org] = await tx
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, ctx.organizationId));
+      const [sub] = await tx
+        .select({ plan: subscriptions.plan })
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, ctx.organizationId));
+
+      const messageIds = recipients.map(() => newId());
+      await tx.insert(emailMessages).values(
+        recipients.map((recipient, i) => ({
+          id: messageIds[i],
+          organizationId: ctx.organizationId,
+          type: "invoice_reminder",
+          recipient,
+          subject: `Reminder: invoice ${snapshot.displayNumber}`,
+          entityType: "invoice",
+          entityId: invoice.id,
+          status: "queued",
+        })),
+      );
+      await writeAudit(tx, ctx, {
+        action: "invoice.reminder_sent",
+        entityType: "invoice",
+        entityId: invoice.id,
+        changes: {
+          after: {
+            recipients,
+            displayNumber: snapshot.displayNumber,
+            balanceDue,
+          },
+        },
+      });
+
+      return {
+        snapshot,
+        publicToken: invoice.publicToken!,
+        recipients,
+        messageIds,
+        organizationName: org?.name ?? "Your vendor",
+        watermark: ((sub?.plan ?? "free") as Plan) === "free",
+        balanceDue,
+        dueDate: invoice.dueDate ?? snapshot.dueDate ?? "",
+      };
+    },
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  const daysOverdue =
+    prepared.dueDate && prepared.dueDate < today
+      ? Math.floor(
+          (Date.parse(today) - Date.parse(prepared.dueDate)) / 86_400_000,
+        )
+      : 0;
+  const buildArgs = {
+    snapshot: prepared.snapshot,
+    balanceDue: prepared.balanceDue,
+    dueDate: prepared.dueDate,
+    daysOverdue,
+    publicUrl: `${baseUrl}/i/${prepared.publicToken}`,
+    organizationName: prepared.organizationName,
+    watermark: prepared.watermark,
+  };
+  let rendered: RenderedInvoiceEmail;
+  try {
+    rendered = await buildEmail(buildArgs);
+  } catch {
+    rendered = await plainInvoiceReminder(buildArgs);
+  }
+  await deliverEmails(
+    db,
+    ctx.organizationId,
+    prepared.recipients,
+    prepared.messageIds,
+    rendered,
+    emailSender,
+  );
+  return { recipients: prepared.recipients };
 }
