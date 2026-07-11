@@ -18,6 +18,8 @@ const eslintConfig = [
       "out/**",
       "build/**",
       "next-env.d.ts",
+      // design-tool export kept for reference, not shipped source
+      "Canja invoicing landing page/**",
     ],
   },
 ];
