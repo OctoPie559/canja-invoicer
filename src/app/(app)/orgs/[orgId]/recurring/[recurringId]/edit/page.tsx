@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
-import { getRecurring } from "@/lib/services/recurring";
+import { getRecurring, lastInvoicedDate } from "@/lib/services/recurring";
 import { requireMembership } from "@/lib/transport/org";
 import { RecurringForm } from "@/components/recurring-form";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,12 +19,16 @@ export default async function EditRecurringPage({
   const { role } = await requireMembership(orgId);
   if (!can(role, "recurring.manage")) redirect(`/orgs/${orgId}/recurring`);
 
-  const schedule = await getRecurring(getDb(), orgId, recurringId);
+  const db = getDb();
+  const schedule = await getRecurring(db, orgId, recurringId);
   if (!schedule) notFound();
   if (schedule.status === "ended") {
     redirect(`/orgs/${orgId}/recurring/${recurringId}`);
   }
-  const formData = await loadInvoiceFormData(orgId);
+  const [formData, lastBilledDate] = await Promise.all([
+    loadInvoiceFormData(orgId),
+    lastInvoicedDate(db, orgId, recurringId),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -48,6 +52,7 @@ export default async function EditRecurringPage({
             baseCurrency={formData.baseCurrency}
             allowedCurrencies={formData.allowedCurrencies}
             defaultLineTaxRateBps={formData.defaultLineTaxRateBps}
+            lastBilledDate={lastBilledDate}
             schedule={{
               id: schedule.id,
               version: schedule.version,

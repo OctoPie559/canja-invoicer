@@ -235,6 +235,46 @@ describe("recurring invoices (slice 7)", () => {
     expect((await listGeneratedInvoices(db, fx.orgA, recurringId)).length).toBe(1);
   });
 
+  it("rejects moving the next run into an already-billed period", async () => {
+    const { recurringId } = await createRecurring(
+      db,
+      actorInA(),
+      scheduleInput({ startDate: "2026-09-01" }),
+    );
+    // generate the 2026-09-01 run; schedule advances to 2026-10-01
+    await generateDueRecurringInvoices(db, new Date("2026-09-01T06:00:00Z"));
+    const sched = (await getRecurring(db, fx.orgA, recurringId))!;
+    expect(sched.nextRunAt!.toISOString().slice(0, 10)).toBe("2026-10-01");
+
+    // moving the next run back onto/behind the billed 2026-09-01 is refused
+    await expect(
+      updateRecurring(db, actorInA(), {
+        id: recurringId,
+        version: sched.version,
+        ...scheduleInput({ startDate: "2026-09-01" }),
+      }),
+    ).rejects.toThrow(ValidationError);
+    await expect(
+      updateRecurring(db, actorInA(), {
+        id: recurringId,
+        version: sched.version,
+        ...scheduleInput({ startDate: "2026-08-15" }),
+      }),
+    ).rejects.toThrow(ValidationError);
+
+    // a date strictly after the last billed run is allowed
+    await updateRecurring(db, actorInA(), {
+      id: recurringId,
+      version: sched.version,
+      ...scheduleInput({ startDate: "2026-09-15" }),
+    });
+    expect(
+      (await getRecurring(db, fx.orgA, recurringId))!.nextRunAt!
+        .toISOString()
+        .slice(0, 10),
+    ).toBe("2026-09-15");
+  });
+
   it("a rejected lifecycle action changes nothing and writes no audit row", async () => {
     const { recurringId } = await createRecurring(db, actorInA(), scheduleInput());
     await recurringAction(db, actorInA(), { id: recurringId, action: "end" });

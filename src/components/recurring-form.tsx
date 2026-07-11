@@ -43,6 +43,9 @@ export interface RecurringFormProps {
   baseCurrency: string;
   allowedCurrencies: string[];
   defaultLineTaxRateBps: number;
+  /** Latest date this schedule has already invoiced (edit only) — the next
+   * run cannot be moved to or before it, or the cron would re-bill. */
+  lastBilledDate?: string | null;
   schedule?: {
     id: string;
     version: number;
@@ -70,6 +73,13 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** The calendar day after an ISO date (yyyy-mm-dd), in UTC. */
+function nextDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return isoDate(d);
+}
+
 export function RecurringForm({
   organizationId,
   customers,
@@ -78,15 +88,20 @@ export function RecurringForm({
   baseCurrency,
   allowedCurrencies,
   defaultLineTaxRateBps,
+  lastBilledDate,
   schedule,
 }: RecurringFormProps) {
   const editing = Boolean(schedule);
   const today = isoDate(new Date());
+  // the next run must fall strictly after the last invoiced date
+  const minStart = lastBilledDate ? nextDay(lastBilledDate) : undefined;
 
   const [customerId, setCustomerId] = useState(schedule?.customerId ?? "");
   const [currency, setCurrency] = useState(schedule?.currency ?? baseCurrency);
   const [frequency, setFrequency] = useState(schedule?.frequency ?? "monthly");
   const [autoIssue, setAutoIssue] = useState(schedule?.autoIssue ?? "draft");
+  const [startDate, setStartDate] = useState(schedule?.startDate ?? today);
+  const startTooEarly = Boolean(lastBilledDate && startDate <= lastBilledDate);
   const [lines, setLines] = useState<EditorLine[]>(
     schedule?.lines.length
       ? schedule.lines
@@ -196,12 +211,17 @@ export function RecurringForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="rec-start">First invoice on</Label>
+            <Label htmlFor="rec-start">
+              {editing ? "Next invoice on" : "First invoice on"}
+            </Label>
             <Input
               id="rec-start"
               name="startDate"
               type="date"
-              defaultValue={schedule?.startDate ?? today}
+              min={minStart}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              aria-invalid={startTooEarly}
             />
           </div>
           <div className="space-y-2">
@@ -235,6 +255,16 @@ export function RecurringForm({
               : "Auto-issue skips the draft step and assigns an INV number on the run date."}
           </p>
         </div>
+        {startTooEarly && (
+          <Alert variant="destructive">
+            <AlertDescription>
+              This schedule has already invoiced up to{" "}
+              <span className="font-medium">{lastBilledDate}</span>. Set the next
+              invoice date after that — an earlier date would re-bill a period
+              you&apos;ve already billed.
+            </AlertDescription>
+          </Alert>
+        )}
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -279,7 +309,7 @@ export function RecurringForm({
       </div>
 
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button type="submit" disabled={pending || !customerId}>
+        <Button type="submit" disabled={pending || !customerId || startTooEarly}>
           {pending ? "Saving…" : editing ? "Save schedule" : "Create schedule"}
         </Button>
         <Button asChild type="button" variant="outline">

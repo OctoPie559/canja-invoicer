@@ -28,6 +28,7 @@ import {
   ConflictError,
   NotFoundError,
   PermissionError,
+  ValidationError,
 } from "@/lib/domain/errors";
 import { writeAudit } from "@/lib/audit/write";
 import { jsonSafe } from "@/lib/audit/diff";
@@ -126,6 +127,29 @@ async function lockSchedule(
     .for("update");
   if (!row) throw new NotFoundError("Recurring schedule");
   return row;
+}
+
+/** Issue date (yyyy-mm-dd) of the newest invoice this schedule has generated,
+ * or null if it has never run. ISO dates sort lexicographically, so the max
+ * string is the latest date. */
+async function lastGeneratedIssueDate(
+  tx: Transaction,
+  organizationId: string,
+  recurringId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ issueDate: invoices.issueDate })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, organizationId),
+        eq(invoices.recurringInvoiceId, recurringId),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .orderBy(desc(invoices.issueDate))
+    .limit(1);
+  return row?.issueDate ?? null;
 }
 
 async function insertItems(
@@ -229,6 +253,15 @@ export async function updateRecurring(
       requireEntitlement(org.plan, "multiCurrency");
     }
     await assertCustomerInOrg(tx, ctx.organizationId, data.customerId);
+
+    // the next run may not be moved into an already-billed period — that would
+    // let the cron re-invoice a run it has already generated (double billing)
+    const lastBilled = await lastGeneratedIssueDate(tx, ctx.organizationId, data.id);
+    if (lastBilled && data.startDate <= lastBilled) {
+      throw new ValidationError(
+        `This schedule has already invoiced up to ${lastBilled}. The next invoice date must be after that.`,
+      );
+    }
 
     await tx
       .delete(recurringInvoiceItems)
@@ -611,6 +644,30 @@ export async function getRecurring(
     )
     .orderBy(asc(recurringInvoiceItems.position));
   return { ...schedule, customer: customer ?? null, items };
+}
+
+/** The latest date this schedule has already invoiced, or null if it has
+ * never run. The edit form uses it to keep the next run date from moving
+ * back into an already-billed period (the same guard `updateRecurring`
+ * enforces server-side). */
+export async function lastInvoicedDate(
+  db: Database,
+  organizationId: string,
+  recurringId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ issueDate: invoices.issueDate })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.organizationId, organizationId),
+        eq(invoices.recurringInvoiceId, recurringId),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .orderBy(desc(invoices.issueDate))
+    .limit(1);
+  return row?.issueDate ?? null;
 }
 
 /** Invoices this schedule has generated, newest first. */
