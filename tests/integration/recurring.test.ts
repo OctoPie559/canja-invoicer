@@ -235,6 +235,31 @@ describe("recurring invoices (slice 7)", () => {
     expect((await listGeneratedInvoices(db, fx.orgA, recurringId)).length).toBe(1);
   });
 
+  it("a rejected lifecycle action changes nothing and writes no audit row", async () => {
+    const { recurringId } = await createRecurring(db, actorInA(), scheduleInput());
+    await recurringAction(db, actorInA(), { id: recurringId, action: "end" });
+
+    const auditsBefore = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, recurringId));
+    const versionBefore = (await getRecurring(db, fx.orgA, recurringId))!.version;
+
+    // ended is terminal — resume is an illegal transition
+    await expect(
+      recurringAction(db, actorInA(), { id: recurringId, action: "resume" }),
+    ).rejects.toThrow(ValidationError);
+
+    const after = await getRecurring(db, fx.orgA, recurringId);
+    expect(after!.status).toBe("ended"); // unchanged
+    expect(after!.version).toBe(versionBefore); // no silent bump
+    const auditsAfter = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, recurringId));
+    expect(auditsAfter).toHaveLength(auditsBefore.length); // no orphan audit
+  });
+
   it("tenant isolation: org B cannot read or manage org A's schedule", async () => {
     const { recurringId } = await createRecurring(db, actorInA(), scheduleInput());
     expect(await getRecurring(db, fx.orgB, recurringId)).toBeNull();

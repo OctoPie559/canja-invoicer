@@ -415,7 +415,19 @@ export async function generateDueRecurringInvoices(
           })
           .where(eq(recurringInvoices.id, id));
 
-        if (items.length === 0) return; // misconfigured; nothing to bill
+        if (items.length === 0) {
+          // misconfigured schedule (no live line items) — nothing to bill,
+          // but the advance above is still a state change, so audit it
+          await writeAudit(tx, ctx, {
+            action: "recurring.skipped",
+            entityType: "recurring_invoice",
+            entityId: id,
+            changes: {
+              after: jsonSafe({ reason: "no line items", nextRunAt: next, ended }),
+            },
+          });
+          return;
+        }
 
         const totals = computeInvoiceTotals(
           items.map((it) => ({
