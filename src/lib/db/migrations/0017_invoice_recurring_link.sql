@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN "recurring_invoice_id" text;

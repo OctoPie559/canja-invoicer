@@ -10,6 +10,7 @@ import {
   NotebookText,
   LayoutDashboard,
   Package,
+  Repeat,
   Users,
 } from "lucide-react";
 import { Logo } from "./logo";
@@ -61,6 +62,7 @@ export function AppSidebar({
   const salesItems = [
     { title: "Quotes", href: `${orgRoot}/estimates`, icon: NotebookText },
     { title: "Invoices", href: `${orgRoot}/invoices`, icon: FileSpreadsheet },
+    { title: "Recurring", href: `${orgRoot}/recurring`, icon: Repeat },
     { title: "Payments received", href: `${orgRoot}/payments`, icon: Banknote },
     { title: "Credit notes", href: `${orgRoot}/credit-notes`, icon: FileMinus },
   ];
