@@ -120,6 +120,13 @@
       "when": 1783537399737,
       "tag": "0016_estimate_viewed_customer_actor",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783782438152,
+      "tag": "0017_invoice_recurring_link",
+      "breakpoints": true
     }
   ]
 }
