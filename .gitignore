@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Design-tool exports (kept locally for reference, not shipped)
+/Canja invoicing landing page/
