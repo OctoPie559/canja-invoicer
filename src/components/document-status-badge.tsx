@@ -14,6 +14,11 @@ const STYLES: Record<string, string> = {
   issued:
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   void: "bg-muted text-muted-foreground line-through",
+  // recurring-schedule statuses
+  active:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  paused: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  ended: "bg-muted text-muted-foreground",
 };
 
 export function DocumentStatusBadge({ status }: { status: string }) {

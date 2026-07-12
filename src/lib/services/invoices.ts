@@ -432,14 +432,19 @@ export async function issueInvoice(
   input: IssueInvoiceInput,
 ): Promise<{ displayNumber: string }> {
   const data = issueInvoiceSchema.parse(input);
-  if (!ctx.actorId) throw new PermissionError("invoice.issue");
+  // the recurring cron issues as a SYSTEM actor (no user, no membership);
+  // every other caller must be an authenticated member with the permission
+  const system = ctx.actorType === "system";
+  if (!system && !ctx.actorId) throw new PermissionError("invoice.issue");
   if (data.dueDate < data.issueDate) {
     throw new ValidationError("Due date cannot be before the issue date");
   }
 
   return withOrgTransaction(db, ctx.organizationId, async (tx) => {
-    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
-    authorize(caller.role, "invoice.issue");
+    if (!system) {
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "invoice.issue");
+    }
     const invoice = await lockInvoice(tx, ctx.organizationId, data.id);
     assertTransition(invoice.status as InvoiceStatus, "sent");
     if (invoice.version !== data.version) throw new ConflictError("Invoice");
