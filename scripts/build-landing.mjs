@@ -94,7 +94,8 @@ html = html
 // 7. Asset paths → public/
 html = html
   .replace(/assets\/logo\//g, "/logo_assets/")
-  .replace(/uploads\/bg-image\.png/g, "/bg-image.png");
+  // hero background is optimized to WebP (see the build note in the README/PR)
+  .replace(/uploads\/bg-image\.png/g, "/bg-image.webp");
 
 // 8. CTAs → real auth routes. The targeted rewrites match on the link's text
 //    (not attribute position — a class= may precede href after step 4).
