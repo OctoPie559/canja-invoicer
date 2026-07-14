@@ -1,4 +1,4 @@
-# invoicer
+# Canja
 
 Kenya-first invoicing & payments platform for freelancers and small teams.
 Working name; see [PROJECT_BRIEF.md](./PROJECT_BRIEF.md) (what/why) and

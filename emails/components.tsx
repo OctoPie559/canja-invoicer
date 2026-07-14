@@ -7,7 +7,7 @@ import { Img, Section, Text } from 'react-email';
  */
 
 export const BRAND_BLURB =
-  'invoicer helps Kenyan freelancers and small teams send professional invoices, get paid the way their clients actually pay, and keep a trustworthy record of every shilling.';
+  'Canja helps Kenyan freelancers and small teams send professional invoices, get paid the way their clients actually pay, and keep a trustworthy record of every shilling.';
 
 export function EmailLogo({ baseUrl }: { baseUrl: string }) {
   return (
@@ -18,8 +18,8 @@ export function EmailLogo({ baseUrl }: { baseUrl: string }) {
         // that file. baseUrl must be a PUBLICLY reachable origin in real
         // sends (emailAssetBaseUrl) — email clients fetch images through
         // their own proxies, which can never reach localhost.
-        src={`${baseUrl}/static/color-logo.png`}
-        alt="invoicer"
+        src={`${baseUrl}/static/wordmark-color.png`}
+        alt="Canja"
         width={148}
         height={45}
         className="block border-none"
@@ -35,7 +35,7 @@ export function EmailFooter() {
         {BRAND_BLURB}
       </Text>
       <Text className="font-11 font-inter text-fg-2 m-0 mt-5">
-        You received this email because of activity on your invoicer account.
+        You received this email because of activity on your Canja account.
       </Text>
     </Section>
   );

@@ -9,7 +9,7 @@ export const PDF_TEMPLATES = [
   {
     id: "classic",
     name: "Classic",
-    description: "Accent bar, roomy layout — the invoicer default.",
+    description: "Accent bar, roomy layout — the Canja default.",
     pro: false,
   },
   {

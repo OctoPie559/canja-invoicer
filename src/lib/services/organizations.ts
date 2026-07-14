@@ -155,7 +155,7 @@ const plainInvitation: InvitationRenderer = async ({
   role,
   url,
 }) => ({
-  subject: `You've been invited to ${organizationName} on invoicer`,
+  subject: `You've been invited to ${organizationName} on Canja`,
   text: `${inviterName} has invited you to join ${organizationName} as ${role}.\n\nAccept: ${url}`,
 });
 

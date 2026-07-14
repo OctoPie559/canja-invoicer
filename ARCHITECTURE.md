@@ -1,6 +1,6 @@
-# `invoicer` — Architecture & Delivery Plan
+# Canja — Architecture & Delivery Plan
 
-> **Working name:** `invoicer` (placeholder; rename does not block anything).
+> **Name:** **Canja** — a Lojban word for barter trade.
 > **Companion to:** [PROJECT_BRIEF.md](./PROJECT_BRIEF.md), which is the source of truth for *what* and *why*. This document is the source of truth for *how*: concrete structure, schema, patterns, and the slice-by-slice execution plan.
 > **Status:** Living document. When a decision here changes, update this file in the same session as the change.
 
@@ -302,7 +302,7 @@ This is a financial tool, so tests are part of every slice's deliverable, not a 
 | IDs stored as `text` columns (UUIDv7 strings) rather than `uuid` type, for consistency with Better Auth's text ids across all FKs | **Locked** (slice 0) |
 | Display numbers via per-org counters in `organization_settings` under `FOR UPDATE` | **Locked** |
 | Snapshot as JSONB on the document row (vs separate snapshot tables) | Chosen for simplicity; revisit only if snapshot querying becomes a need |
-| Product name | Open — placeholder `invoicer`; does not block |
+| Product name | **Resolved** (2026-07-14): **Canja** (Lojban for "barter trade") |
 | Free-tier caps & Pro price | Open — validate before launch; entitlement code makes limits config-level changes |
 | Kenyan-entity payout prerequisites (KRA PIN, registration, bank) | Open — confirm before slice 8 |
 | Recurring: auto-issue vs draft-per-run default | **Resolved** (slice 7): per-schedule choice (`auto_issue` = `draft` \| `issue`), default `draft`. Auto-issue runs only in the org's **base currency** — a foreign-currency run always lands as a draft because it needs a human-set FX rate before issuing. A run advances `next_run_at` regardless of outcome (even an empty/misconfigured schedule) so a broken run never loops; a **downgraded** org's schedules are skipped and left untouched (not advanced), resuming automatically if the org re-upgrades. Generation is one system-actor transaction per schedule; auto-issue happens best-effort after commit via the shared `issueInvoice`. Editing a schedule may not move `next_run_at` to or before the latest date it has already invoiced — a double-billing guard enforced server-side in `updateRecurring` and surfaced in the edit form (min-date + warning). |
