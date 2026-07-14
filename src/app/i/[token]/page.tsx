@@ -4,7 +4,10 @@ import { getDb } from "@/lib/db/client";
 import { Money } from "@/lib/domain/money";
 import { paymentTermsLabel } from "@/lib/domain/payment-terms";
 import { getInvoiceByPublicToken } from "@/lib/services/invoices";
+import { isOutstanding, type InvoiceStatus } from "@/lib/domain/invoice-status";
+import { isPaymentsConfigured } from "@/lib/payments";
 import { InvoiceStatusBadge } from "@/components/invoice-status-badge";
+import { PayInvoice } from "@/components/pay-invoice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -63,6 +66,17 @@ export default async function PublicInvoicePage({
             payable.
           </p>
         )}
+
+        {isPaymentsConfigured() &&
+          isOutstanding(status as InvoiceStatus) &&
+          !balance.isNegative() &&
+          !balance.isZero() && (
+            <PayInvoice
+              token={token}
+              balanceLabel={balance.toString()}
+              prefillEmail={snapshot.customer.primaryContact?.email}
+            />
+          )}
 
         <Card>
           <CardContent className="space-y-8 pt-6">

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import type { Database } from "@/lib/db/client";
+import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   customers,
@@ -40,6 +40,143 @@ import {
  * money history follows the same immutability discipline as documents.
  */
 
+type PaymentMethodName = "mpesa" | "bank" | "cash" | "card" | "other";
+
+interface ApplyPaymentParams {
+  invoiceId: string;
+  /** as received, minor units */
+  amountMinor: bigint;
+  currency: string;
+  /** payment currency → invoice currency; required iff they differ */
+  fxRateUsed?: string | null;
+  method: PaymentMethodName;
+  source: "manual" | "gateway";
+  provider?: string | null;
+  /** globally-unique idempotency key for gateway callbacks; null for manual */
+  providerTransactionId?: string | null;
+  reference?: string | null;
+  paidAt: Date;
+  recordedBy?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * The single settlement path both manual recording and gateway callbacks run
+ * through (ARCHITECTURE.md §6: "record the payment through the same service
+ * path as manual payments — same audit, same status recomputation"). Runs in
+ * the caller's transaction: locks the invoice, computes settlement, inserts
+ * the payment, recomputes status, and writes both audit rows. The caller owns
+ * idempotency (dedup before calling); this asserts state and settles.
+ */
+export async function applyInvoicePayment(
+  tx: Transaction,
+  ctx: ActorContext,
+  params: ApplyPaymentParams,
+): Promise<{ paymentId: string; invoiceStatus: InvoiceStatus }> {
+  const paymentId = newId();
+
+  const [invoice] = await tx
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.id, params.invoiceId),
+        eq(invoices.organizationId, ctx.organizationId),
+        isNull(invoices.deletedAt),
+      ),
+    )
+    .for("update");
+  if (!invoice) throw new NotFoundError("Invoice");
+  if (!isOutstanding(invoice.status as InvoiceStatus)) {
+    throw new ValidationError(
+      invoice.status === "draft"
+        ? "Issue the invoice before recording payments"
+        : `A ${invoice.status} invoice cannot take payments`,
+    );
+  }
+
+  const received = Money.fromMinor(params.amountMinor, params.currency);
+  const total = invoice.totalMinor ?? 0n;
+  const paidBefore = invoice.amountPaidMinor ?? 0n;
+  const settlement = computeSettlement({
+    amountMinor: received.amountMinor,
+    currency: params.currency,
+    invoiceCurrency: invoice.currency,
+    fxRateUsed: params.fxRateUsed ?? null,
+    balanceDueMinor: total - paidBefore,
+  });
+
+  // cap the invoice-level tally at the total: the balance stays honest
+  // and any over-payment lives on the payment row's settlementDelta
+  const paidAfter = (() => {
+    const raw = paidBefore + settlement.amountInInvoiceCurrency.amountMinor;
+    return raw > total ? total : raw;
+  })();
+  const nextStatus = statusAfterPayment(paidAfter, total);
+  // a third installment keeps a partial invoice partial — the identity
+  // "transition" is legal for payments; assertTransition covers real moves
+  if (invoice.status !== nextStatus) {
+    assertTransition(invoice.status as InvoiceStatus, nextStatus);
+  }
+
+  await tx.insert(payments).values({
+    id: paymentId,
+    organizationId: ctx.organizationId,
+    invoiceId: invoice.id,
+    amountMinor: received.amountMinor,
+    currency: received.currency,
+    fxRateUsed: params.fxRateUsed ?? null,
+    amountInInvoiceCurrencyMinor: settlement.amountInInvoiceCurrency.amountMinor,
+    settlementDeltaMinor: settlement.settlementDelta.amountMinor,
+    method: params.method,
+    source: params.source,
+    provider: params.provider ?? null,
+    providerTransactionId: params.providerTransactionId ?? null,
+    reference: params.reference ?? null,
+    paidAt: params.paidAt,
+    recordedBy: params.recordedBy ?? null,
+    notes: params.notes ?? null,
+  });
+  await tx
+    .update(invoices)
+    .set({
+      amountPaidMinor: paidAfter,
+      status: nextStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(invoices.id, invoice.id));
+  await writeAudit(tx, ctx, {
+    action: "payment.recorded",
+    entityType: "payment",
+    entityId: paymentId,
+    changes: {
+      after: jsonSafe({
+        invoiceId: invoice.id,
+        displayNumber: invoice.displayNumber,
+        amountMinor: received.amountMinor,
+        currency: received.currency,
+        amountInInvoiceCurrencyMinor:
+          settlement.amountInInvoiceCurrency.amountMinor,
+        settlementDeltaMinor: settlement.settlementDelta.amountMinor,
+        method: params.method,
+        source: params.source,
+        invoiceStatus: nextStatus,
+      }),
+    },
+  });
+  // the invoice's own timeline shows the status change too
+  await writeAudit(tx, ctx, {
+    action: nextStatus === "paid" ? "invoice.paid" : "invoice.partially_paid",
+    entityType: "invoice",
+    entityId: invoice.id,
+    changes: {
+      before: { status: invoice.status, amountPaidMinor: String(paidBefore) },
+      after: { status: nextStatus, amountPaidMinor: String(paidAfter) },
+    },
+  });
+  return { paymentId, invoiceStatus: nextStatus };
+}
+
 export async function recordPayment(
   db: Database,
   ctx: ActorContext,
@@ -47,66 +184,15 @@ export async function recordPayment(
 ): Promise<{ paymentId: string; invoiceStatus: InvoiceStatus }> {
   const data = recordPaymentSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("payment.record");
-  const paymentId = newId();
 
-  const status = await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+  return withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
     authorize(caller.role, "payment.record");
-
-    const [invoice] = await tx
-      .select()
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.id, data.invoiceId),
-          eq(invoices.organizationId, ctx.organizationId),
-          isNull(invoices.deletedAt),
-        ),
-      )
-      .for("update");
-    if (!invoice) throw new NotFoundError("Invoice");
-    if (!isOutstanding(invoice.status as InvoiceStatus)) {
-      throw new ValidationError(
-        invoice.status === "draft"
-          ? "Issue the invoice before recording payments"
-          : `A ${invoice.status} invoice cannot take payments`,
-      );
-    }
-
-    const received = Money.parse(data.amount, data.currency);
-    const total = invoice.totalMinor ?? 0n;
-    const paidBefore = invoice.amountPaidMinor ?? 0n;
-    const settlement = computeSettlement({
-      amountMinor: received.amountMinor,
+    return applyInvoicePayment(tx, ctx, {
+      invoiceId: data.invoiceId,
+      amountMinor: Money.parse(data.amount, data.currency).amountMinor,
       currency: data.currency,
-      invoiceCurrency: invoice.currency,
       fxRateUsed: data.fxRateUsed ?? null,
-      balanceDueMinor: total - paidBefore,
-    });
-
-    // cap the invoice-level tally at the total: the balance stays honest
-    // and any over-payment lives on the payment row's settlementDelta
-    const paidAfter = (() => {
-      const raw = paidBefore + settlement.amountInInvoiceCurrency.amountMinor;
-      return raw > total ? total : raw;
-    })();
-    const nextStatus = statusAfterPayment(paidAfter, total);
-    // a third installment keeps a partial invoice partial — the identity
-    // "transition" is legal for payments; assertTransition covers real moves
-    if (invoice.status !== nextStatus) {
-      assertTransition(invoice.status as InvoiceStatus, nextStatus);
-    }
-
-    await tx.insert(payments).values({
-      id: paymentId,
-      organizationId: ctx.organizationId,
-      invoiceId: invoice.id,
-      amountMinor: received.amountMinor,
-      currency: received.currency,
-      fxRateUsed: data.fxRateUsed ?? null,
-      amountInInvoiceCurrencyMinor:
-        settlement.amountInInvoiceCurrency.amountMinor,
-      settlementDeltaMinor: settlement.settlementDelta.amountMinor,
       method: data.method,
       source: "manual",
       reference: data.reference ?? null,
@@ -114,46 +200,7 @@ export async function recordPayment(
       recordedBy: ctx.actorId,
       notes: data.notes ?? null,
     });
-    await tx
-      .update(invoices)
-      .set({
-        amountPaidMinor: paidAfter,
-        status: nextStatus,
-        updatedAt: new Date(),
-      })
-      .where(eq(invoices.id, invoice.id));
-    await writeAudit(tx, ctx, {
-      action: "payment.recorded",
-      entityType: "payment",
-      entityId: paymentId,
-      changes: {
-        after: jsonSafe({
-          invoiceId: invoice.id,
-          displayNumber: invoice.displayNumber,
-          amountMinor: received.amountMinor,
-          currency: received.currency,
-          amountInInvoiceCurrencyMinor:
-            settlement.amountInInvoiceCurrency.amountMinor,
-          settlementDeltaMinor: settlement.settlementDelta.amountMinor,
-          method: data.method,
-          invoiceStatus: nextStatus,
-        }),
-      },
-    });
-    // the invoice's own timeline shows the status change too
-    await writeAudit(tx, ctx, {
-      action:
-        nextStatus === "paid" ? "invoice.paid" : "invoice.partially_paid",
-      entityType: "invoice",
-      entityId: invoice.id,
-      changes: {
-        before: { status: invoice.status, amountPaidMinor: String(paidBefore) },
-        after: { status: nextStatus, amountPaidMinor: String(paidAfter) },
-      },
-    });
-    return nextStatus;
   });
-  return { paymentId, invoiceStatus: status };
 }
 
 /** Payments for one invoice (workspace Payments tab). */

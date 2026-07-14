@@ -127,6 +127,13 @@
       "when": 1783782438152,
       "tag": "0017_invoice_recurring_link",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783966103230,
+      "tag": "0018_payment_intents",
+      "breakpoints": true
     }
   ]
 }
