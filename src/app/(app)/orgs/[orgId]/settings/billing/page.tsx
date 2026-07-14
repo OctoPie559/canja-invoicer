@@ -40,10 +40,13 @@ const dateFmt = new Intl.DateTimeFormat("en-KE", {
 
 export default async function BillingSettingsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ orgId: string }>;
+  searchParams: Promise<{ upgraded?: string }>;
 }) {
   const { orgId } = await params;
+  const { upgraded } = await searchParams;
   const { role } = await requireMembership(orgId);
   const subscription = await getSubscription(getDb(), orgId);
 
@@ -53,6 +56,12 @@ export default async function BillingSettingsPage({
 
   return (
     <div className="space-y-4">
+      {upgraded === "1" && isPro && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+          <Check className="size-4 text-primary" />
+          Payment confirmed — you&apos;re on Pro now.
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

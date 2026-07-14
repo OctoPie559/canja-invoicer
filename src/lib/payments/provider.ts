@@ -62,6 +62,13 @@ export interface PaymentProvider {
    * act on — the caller treats null as "reject, write nothing".
    */
   verifyWebhook(rawBody: string, signature: string | null): ProviderEvent | null;
+  /**
+   * Fetch a transaction's authoritative state by reference (the checkout-return
+   * fallback). Returns the same event shape as verifyWebhook, or null when the
+   * reference is unknown or the lookup fails — authenticity comes from the
+   * provider answering with our secret, not from a signature.
+   */
+  fetchTransaction(reference: string): Promise<ProviderEvent | null>;
 }
 
 /**

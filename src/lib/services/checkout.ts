@@ -28,7 +28,11 @@ import {
   proPrice,
   type BillingInterval,
 } from "@/lib/authz/plan-pricing";
-import { newChargeReference, type PaymentProvider } from "@/lib/payments";
+import {
+  newChargeReference,
+  type PaymentProvider,
+  type ProviderEvent,
+} from "@/lib/payments";
 import {
   startInvoiceCheckoutSchema,
   startSubscriptionCheckoutSchema,
@@ -142,7 +146,7 @@ export async function initiateInvoiceCharge(
     amountMinor: balanceMinor,
     currency: invoice.currency,
     email,
-    callbackUrl: `${args.baseUrl}/i/${input.token}`,
+    callbackUrl: `${args.baseUrl}/api/payments/return`,
     metadata: {
       purpose: "invoice",
       organizationId: invoice.organizationId,
@@ -235,7 +239,7 @@ export async function initiateSubscriptionCharge(
     amountMinor: price.amountMinor,
     currency: BILLING_CURRENCY,
     email,
-    callbackUrl: `${args.baseUrl}/orgs/${ctx.organizationId}/settings/billing`,
+    callbackUrl: `${args.baseUrl}/api/payments/return`,
     metadata: {
       purpose: "subscription",
       organizationId: ctx.organizationId,
@@ -270,7 +274,36 @@ export async function processProviderEvent(
 ): Promise<ProcessResult> {
   const event = provider.verifyWebhook(rawBody, signature);
   if (!event) return { ok: false, reason: "invalid_signature" };
+  return processEvent(db, provider, event, meta);
+}
 
+/**
+ * Verify a charge directly with the provider by reference and settle it — the
+ * fallback for when the browser returns from checkout but the webhook is
+ * delayed or (in local dev) cannot reach us. Shares the SAME idempotent
+ * settlement as the webhook, so whichever arrives first wins and the other
+ * no-ops (both key on the intent, locked FOR UPDATE). Authenticity comes from
+ * asking the provider — with our secret — whether the reference is paid, so an
+ * attacker cannot forge a success by guessing a reference.
+ */
+export async function verifyAndProcessCharge(
+  db: Database,
+  provider: PaymentProvider,
+  reference: string,
+  meta?: RequestMeta,
+): Promise<ProcessResult> {
+  const event = await provider.fetchTransaction(reference);
+  if (!event) return { ok: true, reason: "unverified" };
+  return processEvent(db, provider, event, meta);
+}
+
+/** Shared core: match a provider event to its intent and settle idempotently. */
+async function processEvent(
+  db: Database,
+  provider: PaymentProvider,
+  event: ProviderEvent,
+  meta?: RequestMeta,
+): Promise<ProcessResult> {
   // Resolve the org from the reference first (a plain read, outside RLS): the
   // callback carries no session, so the intent we created IS the org context.
   const [intentRef] = await db
@@ -461,4 +494,38 @@ export async function reconcilePendingIntents(
     });
   }
   return { swept };
+}
+
+/**
+ * Where to send the payer after the checkout-return handler settles: back to
+ * the billing page for a subscription, or the hosted invoice for an invoice
+ * charge. A plain read by reference (the return route carries no session).
+ */
+export async function getReturnDestination(
+  db: Database,
+  reference: string,
+): Promise<string> {
+  const [intent] = await db
+    .select()
+    .from(paymentIntents)
+    .where(
+      and(
+        eq(paymentIntents.reference, reference),
+        isNull(paymentIntents.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!intent) return "/";
+  if (intent.purpose === "subscription") {
+    return `/orgs/${intent.organizationId}/settings/billing?upgraded=1`;
+  }
+  if (intent.invoiceId) {
+    const [inv] = await db
+      .select({ token: invoices.publicToken })
+      .from(invoices)
+      .where(eq(invoices.id, intent.invoiceId))
+      .limit(1);
+    if (inv?.token) return `/i/${inv.token}`;
+  }
+  return "/";
 }
