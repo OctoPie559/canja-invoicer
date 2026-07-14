@@ -76,7 +76,7 @@ export const EstimateResponseEmail = ({
                 <Section className="mobile:px-6! px-10 pt-16 pb-8">
                   <Text className="font-11 font-inter text-fg-3 m-0 max-w-[310px]">
                     You received this because a customer responded to a quote on
-                    your invoicer account.
+                    your Canja account.
                   </Text>
                 </Section>
 

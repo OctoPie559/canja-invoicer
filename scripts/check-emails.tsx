@@ -49,9 +49,9 @@ async function main() {
   );
   assert("verification", v.html, v.text, [
     "Erick",
-    "invoicer",
+    "Canja",
     "verify",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   // send path: with a real base URL the logo must be an absolute hosted URL
@@ -65,16 +65,16 @@ async function main() {
     />,
   );
   assert("verification (hosted logo)", vHosted.html, vHosted.text, [
-    'src="https://assets.example/static/color-logo.png"',
+    'src="https://assets.example/static/wordmark-color.png"',
   ]);
 
   const p = await renderBoth(
     <PasswordResetEmail url="https://app.example/reset" baseUrl="" />,
   );
   assert("password reset", p.html, p.text, [
-    "invoicer",
+    "Canja",
     "reset",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const i = await renderBoth(
@@ -90,7 +90,7 @@ async function main() {
     "Erick Ngure",
     "Njogu-ini Career Association",
     "member",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   // slice-8 billing templates: rebranded and render-checked now, wired to
@@ -114,7 +114,7 @@ async function main() {
     "Pro",
     "KES 1,500",
     "Subscription confirmed",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const su = await renderBoth(
@@ -132,7 +132,7 @@ async function main() {
     "Erick",
     "Pro",
     "Plan renewed",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const inv = await renderBoth(
@@ -149,7 +149,7 @@ async function main() {
     "INV-000042",
     "KES 3,480.00",
     "View invoice",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const rem = await renderBoth(
@@ -168,7 +168,7 @@ async function main() {
     "KES 1,740.00",
     "Payment reminder",
     "past due",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const est = await renderBoth(
@@ -185,7 +185,7 @@ async function main() {
     "EST-000007",
     "KES 3,480.00",
     "respond",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   const resp = await renderBoth(
@@ -202,7 +202,7 @@ async function main() {
     "EST-000007",
     "Acme Ltd",
     "accepted",
-    "static/color-logo.png",
+    "static/wordmark-color.png",
   ]);
 
   // PDF byte-stability: the same snapshot must produce the same document.

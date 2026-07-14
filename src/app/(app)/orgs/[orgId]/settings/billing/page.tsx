@@ -28,7 +28,7 @@ const PRO_FEATURES = [
   "Multi-currency invoicing",
   "Custom PDF templates",
   "Advanced reports",
-  "No invoicer footer on documents",
+  "No Canja footer on documents",
 ];
 
 const dateFmt = new Intl.DateTimeFormat("en-KE", {

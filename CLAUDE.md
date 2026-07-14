@@ -1,6 +1,6 @@
-# invoicer — AI session context
+# Canja — AI session context
 
-Kenya-first invoicing & payments platform for freelancers and small teams. Working name `invoicer` (placeholder). Not an MVP: every slice shipped is production quality.
+Kenya-first invoicing & payments platform for freelancers and small teams. **Canja** (a Lojban word for barter trade). Not an MVP: every slice shipped is production quality.
 
 ## Read before writing any code
 

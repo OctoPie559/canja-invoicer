@@ -869,7 +869,7 @@ export async function getInvoiceByPublicToken(db: Database, token: string) {
     snapshot,
     status: invoice.status as InvoiceStatus,
     amountPaidMinor: invoice.amountPaidMinor ?? 0n,
-    // free-plan documents carry the invoicer footer (brief §4.4)
+    // free-plan documents carry the Canja footer (brief §4.4)
     watermark: ((sub?.plan ?? "free") as Plan) === "free",
     logoUrl: resolveLogoUrl(snapshot.branding?.logoKey),
     template: snapshotTemplate(snapshot),

@@ -14,7 +14,7 @@ import { EmailFonts } from './fonts';
 import { emailTheme } from './theme';
 
 /**
- * Sent when an invoicer subscription renews or changes (slice 8 — billing).
+ * Sent when an Canja subscription renews or changes (slice 8 — billing).
  * Not wired to a send function yet; the template ships rebranded and ready
  * so wiring is a one-liner when Paystack billing lands.
  */
@@ -52,7 +52,7 @@ export const SubscriptionUpdate = ({
       </Head>
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-        <Preview>Your invoicer {planName} plan renewed</Preview>
+        <Preview>Your Canja {planName} plan renewed</Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
             <Section className="bg-bg border-stroke rounded-[8px] border">
@@ -64,7 +64,7 @@ export const SubscriptionUpdate = ({
                     Plan renewed
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                    Hi {userName}. Your invoicer subscription renewed for
+                    Hi {userName}. Your Canja subscription renewed for
                     another {cycleLabel}. Here&apos;s a quick summary of your
                     plan and billing.
                   </Text>
