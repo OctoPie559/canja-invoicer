@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
-  Banknote,
   Building2,
   CalendarClock,
+  CreditCard,
   FileText,
   Palette,
   Percent,
@@ -40,6 +40,10 @@ const GROUPS: Array<{ label: string; items: SettingsNavItem[] }> = [
     items: [{ title: "Members & roles", segment: "members", icon: Users }],
   },
   {
+    label: "Billing",
+    items: [{ title: "Plan & billing", segment: "billing", icon: CreditCard }],
+  },
+  {
     label: "Taxes",
     items: [{ title: "Tax rates", segment: "tax-rates", icon: Percent }],
   },
@@ -48,13 +52,6 @@ const GROUPS: Array<{ label: string; items: SettingsNavItem[] }> = [
     items: [
       { title: "Payment terms", segment: "payment-terms", icon: CalendarClock },
       { title: "Invoices", segment: "invoices", icon: FileText },
-      // slice 4 ships manual payment recording preferences
-      {
-        title: "Payments received",
-        segment: "payments",
-        icon: Banknote,
-        disabled: true,
-      },
     ],
   },
 ];
