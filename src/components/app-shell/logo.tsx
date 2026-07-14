@@ -10,7 +10,7 @@ export function Logo({ href = "/dashboard" }: { href?: string }) {
         alt="Canja"
         width={256}
         height={256}
-        className="w-28 h-8 dark:hidden group-data-[collapsible=icon]:hidden"
+        className="w-auto h-8 dark:hidden group-data-[collapsible=icon]:hidden"
         priority
       />
       <Image
