@@ -227,7 +227,7 @@ export default async function PublicEstimatePage({
 
         {data.watermark && (
           <p className="text-center text-xs text-muted-foreground">
-            Created with invoicer — professional invoicing for Kenyan
+            Created with Canja — professional invoicing for Kenyan
             freelancers and teams
           </p>
         )}

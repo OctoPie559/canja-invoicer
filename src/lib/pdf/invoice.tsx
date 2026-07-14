@@ -26,7 +26,7 @@ import {
 /**
  * Invoice PDF, rendered ONLY from the issue snapshot (brief §5.3): the
  * same input always produces the same document, no matter what changed
- * since issue. Free-plan documents carry the small "invoicer" footer
+ * since issue. Free-plan documents carry the small "Canja" footer
  * (watermark removal is a Pro entitlement — brief §4.4).
  */
 
@@ -196,9 +196,9 @@ export function InvoicePdf({
   return (
     <Document
       title={`Invoice ${snapshot.displayNumber}`}
-      author={snapshot.branding?.legalName ?? "invoicer"}
-      creator="invoicer"
-      producer="invoicer"
+      author={snapshot.branding?.legalName ?? "Canja"}
+      creator="Canja"
+      producer="Canja"
     >
       <Page size="A4" style={styles.page}>
         {!bold && (
@@ -386,7 +386,7 @@ export function InvoicePdf({
 
         {watermark && (
           <Text style={styles.footer} fixed>
-            Created with invoicer — professional invoicing for Kenyan
+            Created with Canja — professional invoicing for Kenyan
             freelancers and teams
           </Text>
         )}

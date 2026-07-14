@@ -46,7 +46,7 @@ export const VerificationEmail = ({
                     Almost there
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                    Hi {name}, welcome to invoicer.
+                    Hi {name}, welcome to Canja.
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0">
                     Confirm your email address to unlock sending invoices —
@@ -64,7 +64,7 @@ export const VerificationEmail = ({
 
               <Section className="mobile:px-6! px-10 pt-16 pb-8">
                 <Text className="font-11 font-inter text-fg-3 m-0 max-w-[310px]">
-                  If you didn&apos;t create an invoicer account, you can safely
+                  If you didn&apos;t create an Canja account, you can safely
                   ignore this email.
                 </Text>
               </Section>

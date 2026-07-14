@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "invoicer",
+  title: "Canja",
   description:
     "Kenya-first invoicing and payments for freelancers and small teams",
 };

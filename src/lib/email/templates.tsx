@@ -44,7 +44,7 @@ export async function verificationEmail(params: {
       baseUrl={emailAssetBaseUrl()}
     />,
   );
-  return { subject: "Confirm your invoicer email", ...body };
+  return { subject: "Confirm your Canja email", ...body };
 }
 
 export async function passwordResetEmail(params: {
@@ -53,7 +53,7 @@ export async function passwordResetEmail(params: {
   const body = await renderBoth(
     <PasswordResetEmail url={params.url} baseUrl={emailAssetBaseUrl()} />,
   );
-  return { subject: "Reset your invoicer password", ...body };
+  return { subject: "Reset your Canja password", ...body };
 }
 
 export async function invitationEmail(params: {
@@ -72,7 +72,7 @@ export async function invitationEmail(params: {
     />,
   );
   return {
-    subject: `You've been invited to ${params.organizationName} on invoicer`,
+    subject: `You've been invited to ${params.organizationName} on Canja`,
     ...body,
   };
 }

@@ -31,7 +31,7 @@ export const PasswordResetEmail = ({
       </Head>
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-        <Preview>Reset your invoicer password</Preview>
+        <Preview>Reset your Canja password</Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="rounded-[8px] shadow-collage-card">
             <Section className="bg-bg border-stroke rounded-[8px] border">
@@ -43,7 +43,7 @@ export const PasswordResetEmail = ({
                     Reset your password
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
-                    Someone requested a password reset for your invoicer
+                    Someone requested a password reset for your Canja
                     account. Use the button below to choose a new one — for
                     your security, all sessions are signed out after the
                     reset.

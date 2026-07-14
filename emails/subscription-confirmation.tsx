@@ -16,7 +16,7 @@ import { EmailFonts } from './fonts';
 import { emailTheme } from './theme';
 
 /**
- * Sent when an organization upgrades to a paid invoicer plan (slice 8 —
+ * Sent when an organization upgrades to a paid Canja plan (slice 8 —
  * billing). Not wired to a send function yet; the template ships rebranded
  * and ready so wiring is a one-liner when Paystack billing lands.
  */
@@ -61,7 +61,7 @@ export const SubscriptionConfirmation = ({
       </Head>
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
-        <Preview>Your invoicer {planName} plan is active</Preview>
+        <Preview>Your Canja {planName} plan is active</Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
             <Section className="bg-bg border-stroke rounded-[8px] border">
@@ -74,7 +74,7 @@ export const SubscriptionConfirmation = ({
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
                     Hi {userName}, thanks for upgrading. Your organization is
-                    now on the invoicer <strong>{planName}</strong> plan, and
+                    now on the Canja <strong>{planName}</strong> plan, and
                     everything it includes is unlocked.
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">

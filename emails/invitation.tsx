@@ -41,7 +41,7 @@ export const InvitationEmail = ({
 
       <Body className="bg-canvas font-14 font-inter text-fg m-0 p-0">
         <Preview>
-          {inviterName} invited you to {organizationName} on invoicer
+          {inviterName} invited you to {organizationName} on Canja
         </Preview>
         <Container className="mx-auto max-w-[640px] px-4 pt-16 pb-6">
           <Section className="shadow-collage-card rounded-[8px]">
@@ -55,7 +55,7 @@ export const InvitationEmail = ({
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0 mt-[18px]">
                     {inviterName} has invited you to join{' '}
-                    <strong>{organizationName}</strong> on invoicer as{' '}
+                    <strong>{organizationName}</strong> on Canja as{' '}
                     <strong>{role}</strong>.
                   </Text>
                   <Text className="font-14 font-inter text-fg-2 m-0">
