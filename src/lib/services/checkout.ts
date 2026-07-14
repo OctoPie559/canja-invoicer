@@ -29,6 +29,10 @@ import {
   type BillingInterval,
 } from "@/lib/authz/plan-pricing";
 import { newChargeReference, type PaymentProvider } from "@/lib/payments";
+import {
+  startInvoiceCheckoutSchema,
+  startSubscriptionCheckoutSchema,
+} from "@/lib/validation/checkout";
 import { getMembership } from "./organizations";
 import { applyInvoicePayment } from "./payments";
 import { activateProSubscription } from "./subscriptions";
@@ -64,10 +68,14 @@ export async function initiateInvoiceCharge(
   provider: PaymentProvider,
   args: { token: string; email?: string | null; baseUrl: string; meta?: RequestMeta },
 ): Promise<InitiateResult> {
+  const input = startInvoiceCheckoutSchema.parse({
+    token: args.token,
+    email: args.email ?? undefined,
+  });
   const [invoice] = await db
     .select()
     .from(invoices)
-    .where(and(eq(invoices.publicToken, args.token), isNull(invoices.deletedAt)))
+    .where(and(eq(invoices.publicToken, input.token), isNull(invoices.deletedAt)))
     .limit(1);
   if (!invoice || invoice.status === "draft" || !invoice.snapshot) {
     throw new NotFoundError("Invoice");
@@ -86,7 +94,7 @@ export async function initiateInvoiceCharge(
   }
 
   const snapshot = parseInvoiceSnapshot(invoice.snapshot);
-  const email = (args.email ?? snapshot.customer.primaryContact?.email ?? "")
+  const email = (input.email ?? snapshot.customer.primaryContact?.email ?? "")
     .trim()
     .toLowerCase();
   if (!EMAIL_RE.test(email)) {
@@ -96,20 +104,11 @@ export async function initiateInvoiceCharge(
   }
 
   const reference = newChargeReference();
-  const session = await provider.initiateCharge({
-    reference,
-    amountMinor: balanceMinor,
-    currency: invoice.currency,
-    email,
-    callbackUrl: `${args.baseUrl}/i/${args.token}`,
-    metadata: {
-      purpose: "invoice",
-      organizationId: invoice.organizationId,
-      invoiceId: invoice.id,
-    },
-  });
-
   const ctx = customerActor(invoice.organizationId, args.meta);
+
+  // Persist the correlation row BEFORE the provider is charged: if the process
+  // dies mid-initiation, we hold a pending intent the reconcile cron sweeps —
+  // never a Paystack charge with no local record.
   await withOrgTransaction(db, invoice.organizationId, async (tx) => {
     await tx.insert(paymentIntents).values({
       id: newId(),
@@ -118,7 +117,6 @@ export async function initiateInvoiceCharge(
       invoiceId: invoice.id,
       reference,
       provider: provider.name,
-      providerReference: session.providerReference,
       amountMinor: balanceMinor,
       currency: invoice.currency,
       status: "pending",
@@ -139,7 +137,36 @@ export async function initiateInvoiceCharge(
     });
   });
 
+  const session = await provider.initiateCharge({
+    reference,
+    amountMinor: balanceMinor,
+    currency: invoice.currency,
+    email,
+    callbackUrl: `${args.baseUrl}/i/${input.token}`,
+    metadata: {
+      purpose: "invoice",
+      organizationId: invoice.organizationId,
+      invoiceId: invoice.id,
+    },
+  });
+  await recordProviderReference(db, invoice.organizationId, reference, session.providerReference);
+
   return { authorizationUrl: session.authorizationUrl, reference };
+}
+
+/** Patch the provider's handle onto an intent after a successful initiate. */
+async function recordProviderReference(
+  db: Database,
+  organizationId: string,
+  reference: string,
+  providerReference: string,
+): Promise<void> {
+  await withOrgTransaction(db, organizationId, async (tx) => {
+    await tx
+      .update(paymentIntents)
+      .set({ providerReference, updatedAt: new Date() })
+      .where(eq(paymentIntents.reference, reference));
+  });
 }
 
 /**
@@ -154,6 +181,7 @@ export async function initiateSubscriptionCharge(
   args: { baseUrl: string },
 ): Promise<InitiateResult> {
   if (!ctx.actorId) throw new PermissionError("billing.manage");
+  const data = startSubscriptionCheckoutSchema.parse(input);
 
   const email = await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
@@ -169,30 +197,18 @@ export async function initiateSubscriptionCharge(
     throw new ValidationError("A billing email is required to upgrade");
   }
 
-  const price = proPrice(input.interval);
+  const price = proPrice(data.interval);
   const reference = newChargeReference();
-  const session = await provider.initiateCharge({
-    reference,
-    amountMinor: price.amountMinor,
-    currency: BILLING_CURRENCY,
-    email,
-    callbackUrl: `${args.baseUrl}/orgs/${ctx.organizationId}/settings/billing`,
-    metadata: {
-      purpose: "subscription",
-      organizationId: ctx.organizationId,
-      interval: input.interval,
-    },
-  });
 
+  // correlation row first — see initiateInvoiceCharge for the rationale
   await withOrgTransaction(db, ctx.organizationId, async (tx) => {
     await tx.insert(paymentIntents).values({
       id: newId(),
       organizationId: ctx.organizationId,
       purpose: "subscription",
-      billingInterval: input.interval,
+      billingInterval: data.interval,
       reference,
       provider: provider.name,
-      providerReference: session.providerReference,
       amountMinor: price.amountMinor,
       currency: BILLING_CURRENCY,
       status: "pending",
@@ -206,13 +222,27 @@ export async function initiateSubscriptionCharge(
       changes: {
         after: {
           reference,
-          interval: input.interval,
+          interval: data.interval,
           amountMinor: String(price.amountMinor),
           currency: BILLING_CURRENCY,
         },
       },
     });
   });
+
+  const session = await provider.initiateCharge({
+    reference,
+    amountMinor: price.amountMinor,
+    currency: BILLING_CURRENCY,
+    email,
+    callbackUrl: `${args.baseUrl}/orgs/${ctx.organizationId}/settings/billing`,
+    metadata: {
+      purpose: "subscription",
+      organizationId: ctx.organizationId,
+      interval: data.interval,
+    },
+  });
+  await recordProviderReference(db, ctx.organizationId, reference, session.providerReference);
 
   return { authorizationUrl: session.authorizationUrl, reference };
 }
@@ -357,6 +387,15 @@ export async function processProviderEvent(
         .update(paymentIntents)
         .set({ status: "failed", updatedAt: new Date() })
         .where(eq(paymentIntents.id, intent.id));
+      await writeAudit(tx, ctx, {
+        action: "payment.charge_failed",
+        entityType: "payment_intent",
+        entityId: intent.id,
+        changes: {
+          before: { status: "pending" },
+          after: { status: "failed" },
+        },
+      });
       await markEvent("processed");
       return "charge_failed";
     }

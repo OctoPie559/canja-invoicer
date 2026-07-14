@@ -403,6 +403,25 @@ describe("live payments + self-billing (slice 8)", () => {
     expect(pays).toHaveLength(0);
     const invoice = await getInvoice(db, fx.orgA, invoiceId);
     expect(invoice!.status).toBe("sent");
+    expect(await auditCount(fx.orgA, "payment.charge_failed", intent.id)).toBe(1);
+  });
+
+  it("rejects an unknown billing interval server-side", async () => {
+    await expect(
+      initiateSubscriptionCharge(
+        db,
+        provider,
+        actorInA(),
+        { interval: "weekly" as never },
+        { baseUrl: BASE_URL },
+      ),
+    ).rejects.toThrowError();
+    // nothing persisted for the bad interval
+    const intents = await db
+      .select()
+      .from(paymentIntents)
+      .where(eq(paymentIntents.billingInterval, "weekly"));
+    expect(intents).toHaveLength(0);
   });
 
   it("activates Pro when a subscription charge succeeds", async () => {
