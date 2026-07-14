@@ -7,6 +7,7 @@ import {
   Banknote,
   Building2,
   CalendarClock,
+  CreditCard,
   FileText,
   Palette,
   Percent,
@@ -38,6 +39,10 @@ const GROUPS: Array<{ label: string; items: SettingsNavItem[] }> = [
   {
     label: "Users",
     items: [{ title: "Members & roles", segment: "members", icon: Users }],
+  },
+  {
+    label: "Billing",
+    items: [{ title: "Plan & billing", segment: "billing", icon: CreditCard }],
   },
   {
     label: "Taxes",
