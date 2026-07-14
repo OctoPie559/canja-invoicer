@@ -42,20 +42,22 @@ export function UserMenu({
   const router = useRouter();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-2 outline-none">
-        <Avatar className="size-9">
-          <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-            {initials(name)}
-          </AvatarFallback>
-        </Avatar>
-        <span className="hidden text-left sm:block">
-          <span className="block text-sm leading-tight font-semibold text-foreground">
-            {name}
+      <DropdownMenuTrigger className="flex items-center justify-between outline-none">
+        <div className="flex items-center gap-2">
+          <Avatar className="size-10">
+            <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+              {initials(name)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="hidden text-left sm:block">
+            <span className="block text-sm leading-tight font-semibold text-foreground">
+              {name}
+            </span>
+            <span className="block text-xs leading-tight text-muted-foreground">
+              {email}
+            </span>
           </span>
-          <span className="block text-xs leading-tight text-muted-foreground">
-            {email}
-          </span>
-        </span>
+        </div>
         <ChevronsUpDown className="size-4 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

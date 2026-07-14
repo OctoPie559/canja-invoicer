@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPaystackProvider } from "@/lib/payments/paystack";
 
 /**
@@ -77,5 +77,43 @@ describe("paystack provider (slice 8)", () => {
   it("rejects a payload missing required fields", () => {
     const raw = JSON.stringify({ event: "charge.success", data: { status: "success" } });
     expect(provider.verifyWebhook(raw, sign(raw))).toBeNull();
+  });
+
+  describe("fetchTransaction (checkout-return verify)", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("maps a verified transaction, event id matching the webhook's", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: true,
+          data: {
+            id: 555,
+            reference: "cnj_x",
+            amount: 150000,
+            currency: "KES",
+            status: "success",
+            channel: "card",
+          },
+        }),
+      } as Response);
+
+      const ev = await provider.fetchTransaction("cnj_x");
+      expect(ev).not.toBeNull();
+      expect(ev!.status).toBe("success");
+      expect(ev!.method).toBe("card");
+      expect(ev!.reference).toBe("cnj_x");
+      expect(ev!.amountMinor).toBe(150000n);
+      // same id a charge.success webhook would produce → the two dedup cleanly
+      expect(ev!.providerEventId).toBe("charge.success:555");
+    });
+
+    it("returns null when the provider lookup is unsuccessful", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        ok: false,
+        json: async () => ({ status: false, message: "not found" }),
+      } as Response);
+      expect(await provider.fetchTransaction("cnj_missing")).toBeNull();
+    });
   });
 });

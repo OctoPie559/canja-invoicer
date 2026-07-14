@@ -122,6 +122,41 @@ export function createPaystackProvider(secretKey: string): PaymentProvider {
         raw: body,
       };
     },
+
+    async fetchTransaction(reference): Promise<ProviderEvent | null> {
+      const res = await fetch(
+        `${API_BASE}/transaction/verify/${encodeURIComponent(reference)}`,
+        { headers: { Authorization: `Bearer ${secretKey}` } },
+      );
+      const json = (await res.json().catch(() => null)) as {
+        status?: boolean;
+        data?: PaystackData;
+      } | null;
+      if (!res.ok || !json?.status || !json.data) return null;
+      const data = json.data;
+      if (!data.reference || data.id == null || data.amount == null) return null;
+
+      const status = normalizeStatus("", data);
+      // label the event so its id matches the webhook's for a paid charge —
+      // the two paths then dedup cleanly on (provider, provider_event_id)
+      const eventType =
+        status === "success"
+          ? "charge.success"
+          : status === "failed"
+            ? "charge.failed"
+            : "charge.pending";
+      return {
+        providerEventId: `${eventType}:${data.id}`,
+        eventType,
+        status,
+        method: normalizeMethod(data.channel),
+        reference: data.reference,
+        providerTransactionId: String(data.id),
+        amountMinor: BigInt(data.amount),
+        currency: data.currency ?? "",
+        raw: json,
+      };
+    },
   };
 }
 

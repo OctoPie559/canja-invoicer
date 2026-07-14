@@ -19,10 +19,12 @@ import {
   issueInvoice,
 } from "@/lib/services/invoices";
 import {
+  getReturnDestination,
   initiateInvoiceCharge,
   initiateSubscriptionCharge,
   processProviderEvent,
   reconcilePendingIntents,
+  verifyAndProcessCharge,
 } from "@/lib/services/checkout";
 import {
   expireLapsedSubscriptions,
@@ -42,15 +44,64 @@ import { createTwoOrgFixture, type TwoOrgFixture } from "../helpers/fixtures";
 
 const BASE_URL = "http://test.local";
 
+/** A transaction the fake "provider" would return from its verify endpoint. */
+interface SeededTxn {
+  id: string;
+  amount: number;
+  status?: string;
+  channel?: string;
+  currency?: string;
+}
+type FakeProvider = PaymentProvider & {
+  seed(reference: string, txn: SeededTxn): void;
+};
+
 /** Fake provider: signature "valid" passes; anything else is rejected. */
-function fakeProvider(): PaymentProvider {
+function fakeProvider(): FakeProvider {
+  const txns = new Map<string, SeededTxn>();
   return {
     name: "fake",
+    seed(reference, txn) {
+      txns.set(reference, txn);
+    },
     async initiateCharge(p) {
       return {
         reference: p.reference,
         authorizationUrl: `https://pay.test/${p.reference}`,
         providerReference: `acc_${p.reference}`,
+      };
+    },
+    async fetchTransaction(reference) {
+      const t = txns.get(reference);
+      if (!t) return null;
+      const status =
+        t.status === "failed"
+          ? "failed"
+          : t.status === "pending"
+            ? "pending"
+            : "success";
+      const eventType =
+        status === "success"
+          ? "charge.success"
+          : status === "failed"
+            ? "charge.failed"
+            : "charge.pending";
+      const method =
+        t.channel === "card"
+          ? "card"
+          : t.channel === "bank"
+            ? "bank"
+            : "mpesa";
+      return {
+        providerEventId: `${eventType}:${t.id}`,
+        eventType,
+        status,
+        method,
+        reference,
+        providerTransactionId: String(t.id),
+        amountMinor: BigInt(t.amount),
+        currency: t.currency ?? "KES",
+        raw: { verify: t },
       };
     },
     verifyWebhook(rawBody, signature) {
@@ -470,6 +521,97 @@ describe("live payments + self-billing (slice 8)", () => {
         { baseUrl: BASE_URL },
       ),
     ).rejects.toBeInstanceOf(PermissionError);
+  });
+
+  it("settles an invoice via checkout-return verification (no webhook)", async () => {
+    const { invoiceId, token } = await issued();
+    const { reference } = await initiateInvoiceCharge(db, provider, {
+      token,
+      email: "payer@example.test",
+      baseUrl: BASE_URL,
+    });
+    // the payer returns from checkout; the webhook has not arrived
+    provider.seed(reference, { id: "TXN-CB1", amount: 100000 });
+    const result = await verifyAndProcessCharge(db, provider, reference);
+    expect(result).toEqual({ ok: true, reason: "invoice_paid" });
+
+    const invoice = await getInvoice(db, fx.orgA, invoiceId);
+    expect(invoice!.status).toBe("paid");
+    const [pay] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.invoiceId, invoiceId));
+    expect(pay.source).toBe("gateway");
+    expect(pay.providerTransactionId).toBe("TXN-CB1");
+  });
+
+  it("converges with the webhook on a single settlement", async () => {
+    const { invoiceId, token } = await issued();
+    const { reference } = await initiateInvoiceCharge(db, provider, {
+      token,
+      email: "payer@example.test",
+      baseUrl: BASE_URL,
+    });
+    provider.seed(reference, { id: "TXN-CB2", amount: 100000 });
+
+    // callback-verify settles first...
+    const viaReturn = await verifyAndProcessCharge(db, provider, reference);
+    expect(viaReturn.reason).toBe("invoice_paid");
+    // ...then the webhook for the SAME transaction lands — a clean no-op
+    const viaWebhook = await processProviderEvent(
+      db,
+      provider,
+      chargePayload(reference, { id: "TXN-CB2", amount: 100000 }),
+      "valid",
+    );
+    expect(viaWebhook.reason).toBe("duplicate_event");
+
+    const pays = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.invoiceId, invoiceId));
+    expect(pays).toHaveLength(1);
+    const invoice = await getInvoice(db, fx.orgA, invoiceId);
+    expect(invoice!.amountPaidMinor).toBe(100000n);
+  });
+
+  it("no-ops when the reference cannot be verified", async () => {
+    const { token } = await issued();
+    const { reference } = await initiateInvoiceCharge(db, provider, {
+      token,
+      email: "payer@example.test",
+      baseUrl: BASE_URL,
+    });
+    // provider has no record of this reference (unpaid / abandoned)
+    const result = await verifyAndProcessCharge(db, provider, reference);
+    expect(result).toEqual({ ok: true, reason: "unverified" });
+    const [intent] = await db
+      .select()
+      .from(paymentIntents)
+      .where(eq(paymentIntents.reference, reference));
+    expect(intent.status).toBe("pending");
+  });
+
+  it("resolves the checkout-return destination per purpose", async () => {
+    const { token } = await issued();
+    const { reference: invRef } = await initiateInvoiceCharge(db, provider, {
+      token,
+      email: "payer@example.test",
+      baseUrl: BASE_URL,
+    });
+    expect(await getReturnDestination(db, invRef)).toBe(`/i/${token}`);
+
+    const { reference: subRef } = await initiateSubscriptionCharge(
+      db,
+      provider,
+      actorInA(),
+      { interval: "annual" },
+      { baseUrl: BASE_URL },
+    );
+    expect(await getReturnDestination(db, subRef)).toBe(
+      `/orgs/${fx.orgA}/settings/billing?upgraded=1`,
+    );
+    expect(await getReturnDestination(db, "cnj_unknown")).toBe("/");
   });
 
   it("sweeps abandoned charge attempts, leaving fresh ones alone", async () => {
