@@ -62,6 +62,7 @@ export function HowItWorks() {
     <section
       id="how"
       data-reveal
+      className="cj-pad"
       style={{
         background: C.alt,
         borderTop: `1px solid ${C.border}`,

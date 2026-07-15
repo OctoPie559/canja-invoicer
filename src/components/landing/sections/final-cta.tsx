@@ -52,6 +52,7 @@ export function FinalCta() {
   return (
     <section id="cta" style={{ background: C.green900, color: C.darkText }}>
       <div
+        className="cj-cta-pad"
         style={{
           maxWidth: 1200,
           margin: "0 auto",
@@ -99,6 +100,7 @@ export function FinalCta() {
 
       <footer style={{ borderTop: "1px solid rgba(243,249,240,.14)" }}>
         <div
+          className="cj-foot-grid cj-foot-pad"
           style={{
             maxWidth: 1200,
             margin: "0 auto",
@@ -140,6 +142,7 @@ export function FinalCta() {
           ))}
         </div>
         <div
+          className="cj-foot-pad"
           style={{
             maxWidth: 1200,
             margin: "0 auto",
@@ -160,7 +163,6 @@ export function FinalCta() {
             }}
           >
             <span>© 2026 Canja. All rights reserved.</span>
-            <span>Made in Kenya 🇰🇪</span>
           </div>
         </div>
       </footer>
