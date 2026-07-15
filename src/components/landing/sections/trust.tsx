@@ -38,7 +38,7 @@ const CARDS = [
 /** Trust & security — a bento of illustrated cards. Earns the signup. */
 export function Trust() {
   return (
-    <section data-reveal style={{ padding: "112px 32px" }}>
+    <section data-reveal className="cj-pad" style={{ padding: "112px 32px" }}>
       <div
         style={{
           maxWidth: 1200,
@@ -66,6 +66,7 @@ export function Trust() {
         </div>
 
         <div
+          className="cj-trust"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(6,1fr)",

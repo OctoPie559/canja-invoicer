@@ -54,6 +54,7 @@ export function Pricing() {
     <section
       id="pricing"
       data-reveal
+      className="cj-pad"
       style={{
         background: C.alt,
         borderTop: `1px solid ${C.border}`,

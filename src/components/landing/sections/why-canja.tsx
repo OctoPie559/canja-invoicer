@@ -43,6 +43,7 @@ export function WhyCanja() {
     <section
       id="why"
       data-reveal
+      className="cj-pad"
       style={{
         background: C.alt,
         borderTop: `1px solid ${C.border}`,

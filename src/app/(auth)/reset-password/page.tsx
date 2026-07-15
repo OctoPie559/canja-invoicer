@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AuthHeader } from "../auth-header";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -37,13 +38,11 @@ function ResetPasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="font-heading text-base font-medium">
-        Choose a new password
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        For your security, all sessions are signed out after the reset.
-      </p>
+    <form onSubmit={onSubmit} className="space-y-5">
+      <AuthHeader
+        title="Choose a new password"
+        subtitle="For your security, all sessions are signed out after the reset."
+      />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -57,9 +56,10 @@ function ResetPasswordForm() {
           type="password"
           required
           minLength={8}
+          className="h-11"
         />
       </div>
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Saving…" : "Set new password"}
       </Button>
     </form>
