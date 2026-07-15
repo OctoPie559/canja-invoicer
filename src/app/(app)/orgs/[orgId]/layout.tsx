@@ -29,8 +29,10 @@ export default async function OrgShellLayout({
     requireSession(),
     requireMembership(orgId),
   ]);
-  const orgs = await listUserOrganizations(getDb(), session.user.id);
-  const branding = await getBranding(getDb(), orgId);
+  const [orgs, branding] = await Promise.all([
+    listUserOrganizations(getDb(), session.user.id),
+    getBranding(getDb(), orgId),
+  ]);
   let logoUrl: string | null = null;
   if (branding.logoKey) {
     try {

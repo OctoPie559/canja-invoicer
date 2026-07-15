@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db/client";
@@ -9,8 +10,13 @@ import { requireSession } from "./session";
 /**
  * Page/action guard: authenticated session + membership in the org, or 404.
  * Reads may bypass services but never tenancy (ARCHITECTURE.md §1.1).
+ *
+ * Wrapped in React `cache`: the org layout and the page it wraps both guard on
+ * membership, and without memoization that's the same query twice per request.
  */
-export async function requireMembership(organizationId: string): Promise<{
+export const requireMembership = cache(async function requireMembership(
+  organizationId: string,
+): Promise<{
   session: Awaited<ReturnType<typeof requireSession>>;
   role: Role;
 }> {
@@ -27,4 +33,4 @@ export async function requireMembership(organizationId: string): Promise<{
     .limit(1);
   if (!m || !isRole(m.role)) notFound();
   return { session, role: m.role };
-}
+});
