@@ -38,21 +38,20 @@ export default async function OrgOverviewPage({
   const userName = session.user.name
   const db = getDb();
 
-  const [org] = await db
-    .select({ name: organization.name })
-    .from(organization)
-    .where(eq(organization.id, orgId))
-    .limit(1);
-  if (!org) notFound();
-
-  const [overview, cashFlow, statusBreakdown, aging, topCustomers] =
+  const [[org], overview, cashFlow, statusBreakdown, aging, topCustomers] =
     await Promise.all([
+      db
+        .select({ name: organization.name })
+        .from(organization)
+        .where(eq(organization.id, orgId))
+        .limit(1),
       getFinancialOverview(db, orgId),
       getCashFlow(db, orgId, 6),
       getStatusBreakdown(db, orgId),
       getAgingBuckets(db, orgId),
       getTopCustomers(db, orgId, 5),
     ]);
+  if (!org) notFound();
 
   // display-only conversion: charts scale by relative magnitude; every
   // business sum above happened in Money (bigint) inside the services

@@ -42,32 +42,35 @@ export async function getFinancialOverview(
   db: Database,
   organizationId: string,
 ): Promise<FinancialOverview> {
-  const [settings] = await db
-    .select({ baseCurrency: organizationSettings.baseCurrency })
-    .from(organizationSettings)
-    .where(eq(organizationSettings.organizationId, organizationId))
-    .limit(1);
-  const base = settings?.baseCurrency ?? "KES";
-
-  const rows = await db
-    .select({
-      id: invoices.id,
-      status: invoices.status,
-      currency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-      totalMinor: invoices.totalMinor,
-      amountPaidMinor: invoices.amountPaidMinor,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        isNull(invoices.deletedAt),
-      ),
-    );
+  // independent reads — run them together so the page pays one round-trip,
+  // not three (settings + invoices + credits are unrelated).
   // slice 6: outstanding is the EFFECTIVE balance — issued credit notes
   // reduce what a customer owes exactly like cash (drafts/voids don't)
-  const credits = await issuedCreditsByInvoice(db, organizationId);
+  const [[settings], rows, credits] = await Promise.all([
+    db
+      .select({ baseCurrency: organizationSettings.baseCurrency })
+      .from(organizationSettings)
+      .where(eq(organizationSettings.organizationId, organizationId))
+      .limit(1),
+    db
+      .select({
+        id: invoices.id,
+        status: invoices.status,
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+        amountPaidMinor: invoices.amountPaidMinor,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      ),
+    issuedCreditsByInvoice(db, organizationId),
+  ]);
+  const base = settings?.baseCurrency ?? "KES";
 
   let outstanding = Money.zero(base);
   let overdue = Money.zero(base);
@@ -197,14 +200,57 @@ export async function getCashFlow(
   organizationId: string,
   months = 6,
 ): Promise<{ months: CashFlowMonth[]; unconvertibleCount: number }> {
-  const base = await orgBaseCurrency(db, organizationId);
-  const toBase = baseConverter(base);
-
   const start = new Date();
   start.setUTCDate(1);
   start.setUTCHours(0, 0, 0, 0);
   start.setUTCMonth(start.getUTCMonth() - (months - 1));
   const startDate = start.toISOString().slice(0, 10);
+
+  // base currency + both scans (issued invoices, received payments) in one
+  // round-trip instead of three sequential ones
+  const [base, issued, received] = await Promise.all([
+    orgBaseCurrency(db, organizationId),
+    db
+      .select({
+        issueDate: invoices.issueDate,
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+          isNotNull(invoices.issuedAt),
+          ne(invoices.status, "void"),
+          gte(invoices.issueDate, startDate),
+        ),
+      ),
+    db
+      .select({
+        paidAt: payments.paidAt,
+        amountInInvoiceCurrencyMinor: payments.amountInInvoiceCurrencyMinor,
+        invoiceCurrency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+      })
+      .from(payments)
+      .innerJoin(
+        invoices,
+        and(
+          eq(invoices.id, payments.invoiceId),
+          eq(invoices.organizationId, organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(payments.organizationId, organizationId),
+          isNull(payments.deletedAt),
+          gte(payments.paidAt, start),
+        ),
+      ),
+  ]);
+  const toBase = baseConverter(base);
 
   const buckets = new Map<string, CashFlowMonth>();
   for (let i = 0; i < months; i++) {
@@ -219,23 +265,6 @@ export async function getCashFlow(
   }
   let unconvertibleCount = 0;
 
-  const issued = await db
-    .select({
-      issueDate: invoices.issueDate,
-      currency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-      totalMinor: invoices.totalMinor,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        isNull(invoices.deletedAt),
-        isNotNull(invoices.issuedAt),
-        ne(invoices.status, "void"),
-        gte(invoices.issueDate, startDate),
-      ),
-    );
   for (const row of issued) {
     const bucket = row.issueDate ? buckets.get(monthKey(row.issueDate)) : null;
     if (!bucket) continue;
@@ -247,28 +276,6 @@ export async function getCashFlow(
     bucket.invoiced = bucket.invoiced.add(amount);
   }
 
-  const received = await db
-    .select({
-      paidAt: payments.paidAt,
-      amountInInvoiceCurrencyMinor: payments.amountInInvoiceCurrencyMinor,
-      invoiceCurrency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-    })
-    .from(payments)
-    .innerJoin(
-      invoices,
-      and(
-        eq(invoices.id, payments.invoiceId),
-        eq(invoices.organizationId, organizationId),
-      ),
-    )
-    .where(
-      and(
-        eq(payments.organizationId, organizationId),
-        isNull(payments.deletedAt),
-        gte(payments.paidAt, start),
-      ),
-    );
   for (const row of received) {
     const bucket = buckets.get(monthKey(row.paidAt));
     if (!bucket) continue;
@@ -299,28 +306,30 @@ export async function getStatusBreakdown(
   db: Database,
   organizationId: string,
 ): Promise<{ rows: StatusBreakdownRow[]; unconvertibleCount: number }> {
-  const base = await orgBaseCurrency(db, organizationId);
-  const toBase = baseConverter(base);
-
-  const rows = await db
-    .select({
-      id: invoices.id,
-      status: invoices.status,
-      currency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-      totalMinor: invoices.totalMinor,
-      amountPaidMinor: invoices.amountPaidMinor,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        isNull(invoices.deletedAt),
-      ),
-    );
   // slice 6: outstanding is the EFFECTIVE balance — issued credit notes
-  // reduce what a customer owes exactly like cash (drafts/voids don't)
-  const credits = await issuedCreditsByInvoice(db, organizationId);
+  // reduce what a customer owes exactly like cash (drafts/voids don't).
+  // Independent reads run together (one round-trip, not three).
+  const [base, rows, credits] = await Promise.all([
+    orgBaseCurrency(db, organizationId),
+    db
+      .select({
+        id: invoices.id,
+        status: invoices.status,
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+        amountPaidMinor: invoices.amountPaidMinor,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+        ),
+      ),
+    issuedCreditsByInvoice(db, organizationId),
+  ]);
+  const toBase = baseConverter(base);
 
   const byStatus = new Map<string, StatusBreakdownRow>();
   let unconvertibleCount = 0;
@@ -376,32 +385,33 @@ export async function getAgingBuckets(
   organizationId: string,
   today = new Date().toISOString().slice(0, 10),
 ): Promise<{ buckets: AgingBucket[]; unconvertibleCount: number }> {
-  const base = await orgBaseCurrency(db, organizationId);
+  const [base, rows, credits] = await Promise.all([
+    orgBaseCurrency(db, organizationId),
+    db
+      .select({
+        id: invoices.id,
+        dueDate: invoices.dueDate,
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+        amountPaidMinor: invoices.amountPaidMinor,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+          inArray(invoices.status, ["sent", "partial", "overdue"]),
+        ),
+      ),
+    issuedCreditsByInvoice(db, organizationId),
+  ]);
   const toBase = baseConverter(base);
   const defs = ["current", "1-30", "31-60", "61-90", "90+"];
   const buckets = new Map<string, AgingBucket>(
     defs.map((b) => [b, { bucket: b, count: 0, amount: Money.zero(base) }]),
   );
   let unconvertibleCount = 0;
-
-  const rows = await db
-    .select({
-      id: invoices.id,
-      dueDate: invoices.dueDate,
-      currency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-      totalMinor: invoices.totalMinor,
-      amountPaidMinor: invoices.amountPaidMinor,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        isNull(invoices.deletedAt),
-        inArray(invoices.status, ["sent", "partial", "overdue"]),
-      ),
-    );
-  const credits = await issuedCreditsByInvoice(db, organizationId);
   const todayMs = new Date(`${today}T00:00:00Z`).getTime();
   for (const row of rows) {
     const rawRemaining =
@@ -452,38 +462,38 @@ export async function getTopCustomers(
   organizationId: string,
   limit = 5,
 ): Promise<{ rows: TopCustomerRow[]; unconvertibleCount: number }> {
-  const base = await orgBaseCurrency(db, organizationId);
+  const [base, rows, credits] = await Promise.all([
+    orgBaseCurrency(db, organizationId),
+    db
+      .select({
+        id: invoices.id,
+        customerId: invoices.customerId,
+        name: customers.name,
+        status: invoices.status,
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+        amountPaidMinor: invoices.amountPaidMinor,
+      })
+      .from(invoices)
+      .innerJoin(
+        customers,
+        and(
+          eq(customers.id, invoices.customerId),
+          eq(customers.organizationId, organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          isNull(invoices.deletedAt),
+          isNotNull(invoices.issuedAt),
+          ne(invoices.status, "void"),
+        ),
+      ),
+    issuedCreditsByInvoice(db, organizationId),
+  ]);
   const toBase = baseConverter(base);
-
-  const rows = await db
-    .select({
-      id: invoices.id,
-      customerId: invoices.customerId,
-      name: customers.name,
-      status: invoices.status,
-      currency: invoices.currency,
-      fxRateToBase: invoices.fxRateToBase,
-      totalMinor: invoices.totalMinor,
-      amountPaidMinor: invoices.amountPaidMinor,
-    })
-    .from(invoices)
-    .innerJoin(
-      customers,
-      and(
-        eq(customers.id, invoices.customerId),
-        eq(customers.organizationId, organizationId),
-      ),
-    )
-    .where(
-      and(
-        eq(invoices.organizationId, organizationId),
-        isNull(invoices.deletedAt),
-        isNotNull(invoices.issuedAt),
-        ne(invoices.status, "void"),
-      ),
-    );
-
-  const credits = await issuedCreditsByInvoice(db, organizationId);
   const byCustomer = new Map<string, TopCustomerRow>();
   let unconvertibleCount = 0;
   for (const row of rows) {

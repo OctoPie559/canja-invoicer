@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -7,11 +8,16 @@ import type { RequestMeta } from "@/lib/services/organizations";
 
 /** Thin transport helpers (ARCHITECTURE.md §1.1) — no business logic here. */
 
-export async function requireSession() {
+/**
+ * The current session. Wrapped in React `cache` so the many callers in a
+ * single request (layout, page, and every membership check) share ONE session
+ * lookup instead of each round-tripping the auth store.
+ */
+export const requireSession = cache(async () => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/login");
   return session;
-}
+});
 
 export async function requestMeta(): Promise<RequestMeta> {
   const h = await headers();
