@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AuthHeader } from "../auth-header";
 
 export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
@@ -32,17 +33,24 @@ export default function ForgotPasswordPage() {
 
   if (sent) {
     return (
-      <p className="text-sm text-muted-foreground">
-        If an account exists for that email, a reset link is on its way.
-      </p>
+      <div className="space-y-5">
+        <AuthHeader
+          title="Check your inbox"
+          subtitle="If an account exists for that email, a reset link is on its way."
+        />
+        <Button asChild variant="outline" className="h-11 w-full">
+          <Link href="/login">Back to log in</Link>
+        </Button>
+      </div>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="font-heading text-base font-medium">
-        Reset your password
-      </h2>
+    <form onSubmit={onSubmit} className="space-y-5">
+      <AuthHeader
+        title="Reset your password"
+        subtitle="Enter your email and we'll send you a link to set a new one."
+      />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -50,14 +58,17 @@ export default function ForgotPasswordPage() {
       )}
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required />
+        <Input id="email" name="email" type="email" required className="h-11" />
       </div>
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Sending…" : "Send reset link"}
       </Button>
-      <Button asChild variant="link" size="xs" className="px-0">
-        <Link href="/login">Back to sign in</Link>
-      </Button>
+      <p className="text-center text-sm text-muted-foreground">
+        Remembered it?{" "}
+        <Button asChild variant="link" size="xs" className="px-0 font-medium">
+          <Link href="/login">Back to log in</Link>
+        </Button>
+      </p>
     </form>
   );
 }

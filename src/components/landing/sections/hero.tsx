@@ -15,6 +15,7 @@ export function Hero() {
   return (
     <header
       id="top"
+      className="cj-hero"
       style={{
         position: "relative",
         overflow: "hidden",

@@ -28,7 +28,12 @@ const QA = [
 /** FAQ — kill the last objections. Native <details> for zero-JS accordions. */
 export function Faq() {
   return (
-    <section id="faq" data-reveal style={{ padding: "112px 32px" }}>
+    <section
+      id="faq"
+      data-reveal
+      className="cj-pad"
+      style={{ padding: "112px 32px" }}
+    >
       <div
         style={{
           maxWidth: 760,

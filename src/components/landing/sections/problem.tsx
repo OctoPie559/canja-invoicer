@@ -152,10 +152,10 @@ export function Problem() {
   return (
     <section ref={ref} style={{ position: "relative", height: "260vh" }}>
       <div
+        className="cj-stage"
         style={{
           position: "sticky",
           top: 0,
-          height: "100vh",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -216,7 +216,7 @@ export function Problem() {
 /** Reduced-motion / no-JS fallback: the same content, no scroll choreography. */
 function StaticProblem() {
   return (
-    <section style={{ padding: "112px 32px" }}>
+    <section className="cj-pad" style={{ padding: "112px 32px" }}>
       <div
         style={{
           maxWidth: 900,

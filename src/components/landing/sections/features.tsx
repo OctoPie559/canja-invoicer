@@ -196,7 +196,12 @@ function FeatureRow({
 
 export function Features() {
   return (
-    <section id="features" data-reveal style={{ padding: "112px 32px" }}>
+    <section
+      id="features"
+      data-reveal
+      className="cj-pad"
+      style={{ padding: "112px 32px" }}
+    >
       <div
         style={{
           maxWidth: 1200,

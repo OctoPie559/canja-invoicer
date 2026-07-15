@@ -25,6 +25,37 @@ export function LandingStyles() {
 .canjaLanding .cj-foot-link{color:#A9C4A0;transition:color .12s}
 .canjaLanding .cj-foot-link:hover{color:#F3F9F0}
 
+/* responsive — inline styles carry the desktop design; these breakpoints
+   override the handful of values that must change on smaller screens
+   (!important is required to beat the inline declarations) */
+.canjaLanding .cj-burger{display:none;background:none;border:0;padding:6px;cursor:pointer;color:#14231A}
+@media (max-width:900px){
+  .canjaLanding .cj-nav-desktop{display:none !important}
+  .canjaLanding .cj-nav-login{display:none !important}
+  .canjaLanding .cj-burger{display:inline-flex}
+  .canjaLanding .cj-foot-grid{grid-template-columns:1fr 1fr !important}
+}
+@media (min-width:901px){
+  .canjaLanding .cj-mobile-menu{display:none !important}
+}
+@media (max-width:1024px){
+  .canjaLanding .cj-trust{grid-template-columns:1fr 1fr !important}
+  .canjaLanding .cj-trust > div{grid-column:span 1 !important}
+}
+@media (max-width:640px){
+  .canjaLanding .cj-trust{grid-template-columns:1fr !important}
+  .canjaLanding .cj-pad{padding:72px 20px !important}
+  .canjaLanding .cj-hero{padding-left:20px !important;padding-right:20px !important}
+  .canjaLanding .cj-cta-pad{padding:88px 20px 72px !important}
+  .canjaLanding .cj-nav-inner{padding-left:16px !important;padding-right:16px !important}
+  .canjaLanding .cj-foot-pad{padding-left:20px !important;padding-right:20px !important}
+}
+@media (max-width:520px){
+  .canjaLanding .cj-foot-grid{grid-template-columns:1fr !important}
+}
+/* sticky scroll stage: svh keeps it fully visible around mobile URL bars */
+.canjaLanding .cj-stage{height:100vh;height:100svh}
+
 /* motion */
 @keyframes goldPulse{0%{box-shadow:0 8px 24px rgba(244,164,35,.35),0 0 0 0 rgba(244,164,35,.45)}70%{box-shadow:0 8px 24px rgba(244,164,35,.35),0 0 0 14px rgba(244,164,35,0)}100%{box-shadow:0 8px 24px rgba(244,164,35,.35),0 0 0 0 rgba(244,164,35,0)}}
 @keyframes drawIn{0%{transform:scaleX(0)}22%,100%{transform:scaleX(1)}}

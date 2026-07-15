@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AuthHeader } from "../auth-header";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,8 +33,11 @@ export default function LoginPage() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <h2 className="font-heading text-base font-medium">Sign in</h2>
+    <form onSubmit={onSubmit} className="space-y-5">
+      <AuthHeader
+        title="Welcome back"
+        subtitle="Enter your email and password to access your account."
+      />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -41,23 +45,37 @@ export default function LoginPage() {
       )}
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required />
+        <Input id="email" name="email" type="email" required className="h-11" />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input id="password" name="password" type="password" required />
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Password</Label>
+          <Button
+            asChild
+            variant="link"
+            size="xs"
+            className="px-0 font-medium"
+          >
+            <Link href="/forgot-password">Forgot your password?</Link>
+          </Button>
+        </div>
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          required
+          className="h-11"
+        />
       </div>
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? "Signing in…" : "Sign in"}
+      <Button type="submit" disabled={pending} className="h-11 w-full">
+        {pending ? "Signing in…" : "Log in"}
       </Button>
-      <div className="flex justify-between">
-        <Button asChild variant="link" size="xs" className="px-0">
-          <Link href="/signup">Create account</Link>
+      <p className="text-center text-sm text-muted-foreground">
+        Don&apos;t have an account?{" "}
+        <Button asChild variant="link" size="xs" className="px-0 font-medium">
+          <Link href="/signup">Register now</Link>
         </Button>
-        <Button asChild variant="link" size="xs" className="px-0">
-          <Link href="/forgot-password">Forgot password?</Link>
-        </Button>
-      </div>
+      </p>
     </form>
   );
 }
