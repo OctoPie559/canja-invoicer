@@ -62,6 +62,49 @@ export async function createProductAction(
   redirect(`/orgs/${organizationId}/products/${productId}`);
 }
 
+/**
+ * Inline creation from inside another form (e.g. the invoice builder):
+ * same service — same validation, permission check, and audit row — but
+ * returns the created product for the caller to drop into a line item
+ * instead of redirecting away from the half-built document.
+ */
+export async function createProductInlineAction(
+  organizationId: string,
+  formData: FormData,
+): Promise<
+  | { error: string }
+  | {
+      product: {
+        id: string;
+        name: string;
+        unitPrice: string;
+        currency: string;
+        defaultTaxRateBps: number | null;
+      };
+    }
+> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    const fields = productFields(formData);
+    const { productId } = await runWithActor(ctx, () =>
+      createProduct(getDb(), ctx, fields),
+    );
+    return {
+      product: {
+        id: productId,
+        name: fields.name.trim(),
+        unitPrice: fields.unitPrice,
+        currency: fields.currency,
+        // the quick form doesn't pick a tax rate; lines keep the org default
+        defaultTaxRateBps: null,
+      },
+    };
+  } catch (error) {
+    return { error: mapError(error).error ?? "Something went wrong" };
+  }
+}
+
 export async function updateProductAction(
   organizationId: string,
   _prev: ActionState,
