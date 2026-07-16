@@ -10,6 +10,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { getBranding } from "@/lib/services/branding";
+import { getSubscription } from "@/lib/services/subscriptions";
 import { getFileStorage } from "@/lib/storage/r2";
 
 /**
@@ -29,9 +30,10 @@ export default async function OrgShellLayout({
     requireSession(),
     requireMembership(orgId),
   ]);
-  const [orgs, branding] = await Promise.all([
+  const [orgs, branding, subscription] = await Promise.all([
     listUserOrganizations(getDb(), session.user.id),
     getBranding(getDb(), orgId),
+    getSubscription(getDb(), orgId),
   ]);
   let logoUrl: string | null = null;
   if (branding.logoKey) {
@@ -45,7 +47,18 @@ export default async function OrgShellLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebar orgs={orgs} currentOrgId={orgId} logoUrl={logoUrl} session={session} />
+      <AppSidebar
+        orgs={orgs}
+        currentOrgId={orgId}
+        logoUrl={logoUrl}
+        session={session}
+        // upgrade entry in the user menu only while the org is on Free
+        upgradeHref={
+          subscription.plan === "free"
+            ? `/orgs/${orgId}/settings/billing`
+            : undefined
+        }
+      />
       <SidebarInset className="bg-muted/40">
         <header className="flex h-14 items-center gap-2 border-b bg-background px-4">
           <SidebarTrigger className="-ml-1" />

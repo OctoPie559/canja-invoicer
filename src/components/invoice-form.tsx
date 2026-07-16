@@ -18,6 +18,10 @@ import {
   PAYMENT_TERMS_PRESETS,
   paymentTermsLabel,
 } from "@/lib/domain/payment-terms";
+import {
+  NewCustomerDialog,
+  NewProductDialog,
+} from "@/components/inline-create-dialogs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,6 +121,14 @@ export function InvoiceForm({
 
   const [customerId, setCustomerId] = useState(invoice?.customerId ?? "");
   const [currency, setCurrency] = useState(invoice?.currency ?? baseCurrency);
+  // props seed local lists so inline-created entities appear immediately
+  const [customerList, setCustomerList] = useState(customers);
+  const [productList, setProductList] = useState(products);
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  // which line requested a new product (null = dialog closed)
+  const [newProductForLine, setNewProductForLine] = useState<number | null>(
+    null,
+  );
   const newLine = (): InvoiceFormLine => ({
     ...EMPTY_LINE,
     taxRateBps: defaultLineTaxRateBps,
@@ -145,10 +157,15 @@ export function InvoiceForm({
   };
 
   const pickCustomer = (id: string) => {
+    if (id === "__new__") {
+      // sentinel item in the select — open the dialog, keep the value as-is
+      setNewCustomerOpen(true);
+      return;
+    }
     setCustomerId(id);
     // adopting the customer's own terms is the point of storing them —
     // but never silently override a hand-picked custom due date
-    const picked = customers.find((c) => c.id === id);
+    const picked = customerList.find((c) => c.id === id);
     if (picked?.paymentTermsDays != null && termsDays !== "custom") {
       applyTerms(picked.paymentTermsDays);
     }
@@ -177,15 +194,12 @@ export function InvoiceForm({
     );
   };
 
-  const pickProduct = (index: number, productId: string) => {
-    if (productId === "custom") {
-      setLine(index, { productId: null });
-      return;
-    }
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
+  const applyProduct = (
+    index: number,
+    product: InvoiceFormProps["products"][number],
+  ) => {
     setLine(index, {
-      productId,
+      productId: product.id,
       description: product.name,
       // autofill the price only when the catalog price is in this invoice's
       // currency — cross-currency prices need a human decision
@@ -196,6 +210,21 @@ export function InvoiceForm({
         ? { taxRateBps: product.defaultTaxRateBps }
         : {}),
     });
+  };
+
+  const pickProduct = (index: number, productId: string) => {
+    if (productId === "custom") {
+      setLine(index, { productId: null });
+      return;
+    }
+    if (productId === "__new__") {
+      // sentinel item — open the dialog for this line, keep the value as-is
+      setNewProductForLine(index);
+      return;
+    }
+    const product = productList.find((p) => p.id === productId);
+    if (!product) return;
+    applyProduct(index, product);
   };
 
   /** Live preview through the real domain math; partial input shows dashes. */
@@ -268,11 +297,15 @@ export function InvoiceForm({
                 <SelectValue placeholder="Choose a customer" />
               </SelectTrigger>
               <SelectContent>
-                {customers.map((c) => (
+                {customerList.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
                   </SelectItem>
                 ))}
+                <SelectItem value="__new__" className="text-primary">
+                  <Plus className="size-4" />
+                  New customer…
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -400,11 +433,15 @@ export function InvoiceForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="custom">Custom item</SelectItem>
-                      {products.map((p) => (
+                      {productList.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.name}
                         </SelectItem>
                       ))}
+                      <SelectItem value="__new__" className="text-primary">
+                        <Plus className="size-4" />
+                        New product…
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <Input
@@ -575,6 +612,29 @@ export function InvoiceForm({
           Drafts are fully editable — the number is assigned when you issue.
         </p>
       </div>
+
+      {/* quick-create dialogs (Radix portals these out of the form's DOM) */}
+      <NewCustomerDialog
+        organizationId={organizationId}
+        open={newCustomerOpen}
+        onOpenChange={setNewCustomerOpen}
+        onCreated={(c) => {
+          setCustomerList((prev) => [...prev, c]);
+          setCustomerId(c.id);
+        }}
+      />
+      <NewProductDialog
+        organizationId={organizationId}
+        currency={currency}
+        open={newProductForLine !== null}
+        onOpenChange={(open) => {
+          if (!open) setNewProductForLine(null);
+        }}
+        onCreated={(p) => {
+          setProductList((prev) => [...prev, p]);
+          if (newProductForLine !== null) applyProduct(newProductForLine, p);
+        }}
+      />
     </form>
   );
 }

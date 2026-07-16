@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/password-input";
 import { AuthHeader } from "../auth-header";
 
 export default function LoginPage() {
@@ -59,13 +60,7 @@ export default function LoginPage() {
             <Link href="/forgot-password">Forgot your password?</Link>
           </Button>
         </div>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          required
-          className="h-11"
-        />
+        <PasswordInput id="password" name="password" required className="h-11" />
       </div>
       <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Signing in…" : "Log in"}
