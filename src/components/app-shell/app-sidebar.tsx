@@ -38,6 +38,7 @@ export function AppSidebar({
   currentOrgId,
   logoUrl,
   session,
+  upgradeHref,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
@@ -49,6 +50,8 @@ export function AppSidebar({
       emailVerified: boolean;
     };
   };
+  /** Billing link shown as an "Upgrade" menu entry while the org is on Free. */
+  upgradeHref?: string;
 }) {
   const pathname = usePathname();
   const orgRoot = `/orgs/${currentOrgId}`;
@@ -108,6 +111,7 @@ export function AppSidebar({
             email={session.user.email}
             emailVerified={session.user.emailVerified}
             settingsHref={`/orgs/${currentOrgId}/settings`}
+            upgradeHref={upgradeHref}
           />
         </SidebarGroup>
       </SidebarContent>

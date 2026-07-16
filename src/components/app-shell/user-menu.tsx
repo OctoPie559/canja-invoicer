@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
+import { ChevronsUpDown, LogOut, Settings, Sparkles } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -32,12 +32,15 @@ export function UserMenu({
   email,
   emailVerified,
   settingsHref,
+  upgradeHref,
 }: {
   name: string;
   email: string;
   emailVerified: boolean;
   /** Org settings link when rendered inside an organization. */
   settingsHref?: string;
+  /** Billing link, passed only while the org is on the Free plan. */
+  upgradeHref?: string;
 }) {
   const router = useRouter();
   return (
@@ -71,6 +74,14 @@ export function UserMenu({
             <Link href={settingsHref}>
               <Settings />
               Settings
+            </Link>
+          </DropdownMenuItem>
+        )}
+        {upgradeHref && (
+          <DropdownMenuItem asChild>
+            <Link href={upgradeHref} className="font-medium">
+              <Sparkles className="text-amber-500" />
+              Upgrade to Pro
             </Link>
           </DropdownMenuItem>
         )}
