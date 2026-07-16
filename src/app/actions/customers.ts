@@ -84,6 +84,44 @@ export async function createCustomerAction(
   redirect(`/orgs/${organizationId}/customers/${customerId}`);
 }
 
+/**
+ * Inline creation from inside another form (e.g. the invoice builder):
+ * same service — same validation, permission check, and audit row — but
+ * returns the created customer for the caller to select instead of
+ * redirecting away from the half-built document.
+ */
+export async function createCustomerInlineAction(
+  organizationId: string,
+  formData: FormData,
+): Promise<
+  | { error: string }
+  | {
+      customer: { id: string; name: string; paymentTermsDays: number | null };
+    }
+> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    const fields = customerFields(formData);
+    const { customerId } = await runWithActor(ctx, () =>
+      createCustomer(getDb(), ctx, {
+        ...fields,
+        primaryContact: inlinePrimaryContact(formData),
+      }),
+    );
+    return {
+      customer: {
+        id: customerId,
+        name: fields.name.trim(),
+        // terms aren't part of the quick form; the org default applies
+        paymentTermsDays: null,
+      },
+    };
+  } catch (error) {
+    return { error: mapError(error).error ?? "Something went wrong" };
+  }
+}
+
 export async function updateCustomerAction(
   organizationId: string,
   _prev: ActionState,
