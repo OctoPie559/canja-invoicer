@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Package,
   Repeat,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Logo } from "./logo";
@@ -57,6 +58,7 @@ export function AppSidebar({
   const orgRoot = `/orgs/${currentOrgId}`;
   const workspaceItems = [
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
+    { title: "Ask Canja", href: `${orgRoot}/ask`, icon: Sparkles },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
   ];

@@ -13,3 +13,4 @@ export * from "./audit";
 export * from "./comms";
 export * from "./comments";
 export * from "./billing";
+export * from "./ai";

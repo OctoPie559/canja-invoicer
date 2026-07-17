@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lte, ne } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import {
   auditLog,
@@ -562,4 +562,93 @@ export async function getOrgTimeline(
     .where(eq(auditLog.organizationId, organizationId))
     .orderBy(desc(auditLog.createdAt))
     .limit(limit);
+}
+
+/**
+ * Ask Canja (slice 9): issued/collected totals over an arbitrary date range —
+ * getCashFlow's two scans and conversion discipline, without month bucketing.
+ * `from`/`to` are inclusive ISO dates; null bounds mean all-time.
+ */
+export async function getRevenueForRange(
+  db: Database,
+  organizationId: string,
+  range: { from: string | null; to: string | null },
+  metric: "invoiced" | "collected",
+): Promise<{
+  baseCurrency: string;
+  total: Money;
+  count: number;
+  unconvertibleCount: number;
+}> {
+  const base = await orgBaseCurrency(db, organizationId);
+  const toBase = baseConverter(base);
+  let total = Money.zero(base);
+  let unconvertibleCount = 0;
+  let n = 0;
+
+  if (metric === "invoiced") {
+    const conditions = [
+      eq(invoices.organizationId, organizationId),
+      isNull(invoices.deletedAt),
+      isNotNull(invoices.issuedAt),
+      ne(invoices.status, "void"),
+    ];
+    if (range.from) conditions.push(gte(invoices.issueDate, range.from));
+    if (range.to) conditions.push(lte(invoices.issueDate, range.to));
+    const rows = await db
+      .select({
+        currency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+        totalMinor: invoices.totalMinor,
+      })
+      .from(invoices)
+      .where(and(...conditions));
+    for (const row of rows) {
+      const amount = toBase(row.totalMinor ?? 0n, row.currency, row.fxRateToBase);
+      if (amount === null) {
+        unconvertibleCount += 1;
+        continue;
+      }
+      total = total.add(amount);
+      n += 1;
+    }
+  } else {
+    const conditions = [
+      eq(payments.organizationId, organizationId),
+      isNull(payments.deletedAt),
+    ];
+    // paidAt is a timestamptz; widen the inclusive date bounds to full days
+    if (range.from) conditions.push(gte(payments.paidAt, new Date(`${range.from}T00:00:00Z`)));
+    if (range.to) conditions.push(lte(payments.paidAt, new Date(`${range.to}T23:59:59.999Z`)));
+    const rows = await db
+      .select({
+        amountInInvoiceCurrencyMinor: payments.amountInInvoiceCurrencyMinor,
+        invoiceCurrency: invoices.currency,
+        fxRateToBase: invoices.fxRateToBase,
+      })
+      .from(payments)
+      .innerJoin(
+        invoices,
+        and(
+          eq(invoices.id, payments.invoiceId),
+          eq(invoices.organizationId, organizationId),
+        ),
+      )
+      .where(and(...conditions));
+    for (const row of rows) {
+      const amount = toBase(
+        row.amountInInvoiceCurrencyMinor ?? 0n,
+        row.invoiceCurrency,
+        row.fxRateToBase,
+      );
+      if (amount === null) {
+        unconvertibleCount += 1;
+        continue;
+      }
+      total = total.add(amount);
+      n += 1;
+    }
+  }
+
+  return { baseCurrency: base, total, count: n, unconvertibleCount };
 }
