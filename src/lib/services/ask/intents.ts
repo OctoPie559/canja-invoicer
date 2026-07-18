@@ -43,6 +43,9 @@ const CANT_ANSWER =
 
 // ---- deterministic entity resolution (never LLM-guessed ids) ---------------
 
+/** LIKE metacharacters in an extracted ref are literals, not wildcards. */
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, "\\$&");
+
 async function resolveCustomer(db: Database, organizationId: string, ref: string) {
   const matches = await db
     .select({ id: customers.id, name: customers.name })
@@ -51,7 +54,7 @@ async function resolveCustomer(db: Database, organizationId: string, ref: string
       and(
         eq(customers.organizationId, organizationId),
         isNull(customers.deletedAt),
-        ilike(customers.name, `%${ref}%`),
+        ilike(customers.name, `%${escapeLike(ref)}%`),
       ),
     )
     .limit(5);
@@ -70,7 +73,7 @@ async function resolveInvoice(db: Database, organizationId: string, ref: string)
         isNull(invoices.deletedAt),
         digits
           ? ilike(invoices.displayNumber, `%${digits}`)
-          : ilike(invoices.displayNumber, `%${ref}%`),
+          : ilike(invoices.displayNumber, `%${escapeLike(ref)}%`),
       ),
     )
     .limit(10);

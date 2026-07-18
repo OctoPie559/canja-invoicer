@@ -149,6 +149,9 @@ export async function getAskSessionMessages(
 
 // ---- guards ------------------------------------------------------------------
 
+// ponytail: check-then-insert with no lock — N concurrent requests can exceed
+// a cap by up to N-1. These are soft product limits on a paid feature; add an
+// advisory lock keyed on org id if abuse ever shows up in the usage log.
 async function enforceLimits(
   db: Database,
   actor: AskActor,

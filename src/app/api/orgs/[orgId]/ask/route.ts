@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import { getDb } from "@/lib/db/client";
 import { createOpenAiPort } from "@/lib/ai/openai";
 import { DomainError } from "@/lib/domain/errors";
@@ -43,7 +44,9 @@ export async function POST(
         if (error instanceof DomainError) {
           send({ error: error.message, code: error.code });
         } else {
-          console.error("ask failed", error);
+          // the Response is already returned when the stream body runs, so
+          // Next's onRequestError never sees failures here — capture manually
+          Sentry.captureException(error);
           send({ error: "Something went wrong. Try again.", code: "internal" });
         }
       } finally {
