@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Package,
   Repeat,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { Logo } from "./logo";
@@ -36,13 +37,11 @@ import { UserMenu } from "./user-menu";
 export function AppSidebar({
   orgs,
   currentOrgId,
-  logoUrl,
   session,
   upgradeHref,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
-  logoUrl?: string | null;
   session: {
     user: {
       name: string;
@@ -57,6 +56,7 @@ export function AppSidebar({
   const orgRoot = `/orgs/${currentOrgId}`;
   const workspaceItems = [
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
+    { title: "Ask Canja", href: `${orgRoot}/ask`, icon: Sparkles },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
   ];
@@ -78,7 +78,7 @@ export function AppSidebar({
         <Logo />
       </div>
       <SidebarHeader className="px-3">
-        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} logoUrl={logoUrl} />
+        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

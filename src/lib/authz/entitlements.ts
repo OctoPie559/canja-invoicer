@@ -24,6 +24,10 @@ export interface Entitlements {
   advancedReports: boolean;
   removeWatermark: boolean;
   clientPortal: boolean;
+  /** Ask Canja — natural-language Q&A over the org's records (slice 9). */
+  askCanja: boolean;
+  /** Max Ask Canja questions per calendar month; null = unlimited. */
+  monthlyAskCap: number | null;
 }
 
 export const PLAN_ENTITLEMENTS: Record<Plan, Entitlements> = {
@@ -36,6 +40,8 @@ export const PLAN_ENTITLEMENTS: Record<Plan, Entitlements> = {
     advancedReports: false,
     removeWatermark: false,
     clientPortal: false,
+    askCanja: false,
+    monthlyAskCap: 0,
   },
   pro: {
     monthlyInvoiceCap: null,
@@ -46,6 +52,8 @@ export const PLAN_ENTITLEMENTS: Record<Plan, Entitlements> = {
     advancedReports: true,
     removeWatermark: true,
     clientPortal: true,
+    askCanja: true,
+    monthlyAskCap: 500,
   },
 };
 
@@ -66,7 +74,7 @@ export function requireEntitlement(
 /** Throw when a countable cap (seats, monthly invoices) would be exceeded. */
 export function requireWithinCap(
   plan: Plan,
-  cap: "monthlyInvoiceCap" | "seatCap",
+  cap: "monthlyInvoiceCap" | "seatCap" | "monthlyAskCap",
   currentCount: number,
 ): void {
   const limit = PLAN_ENTITLEMENTS[plan][cap];

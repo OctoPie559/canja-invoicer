@@ -38,10 +38,11 @@ export type Action =
   | "branding.update"
   | "tax_rate.manage"
   | "fx_rate.manage"
-  | "billing.manage";
+  | "billing.manage"
+  | "ask.use"; // Ask Canja Q&A — read-only, so every role has it
 
 /** Actions each role may perform, from least to most privileged. */
-const VIEWER: Action[] = [];
+const VIEWER: Action[] = ["ask.use"];
 
 const MEMBER: Action[] = [
   ...VIEWER,

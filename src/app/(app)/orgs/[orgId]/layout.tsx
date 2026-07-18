@@ -9,7 +9,6 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { getBranding } from "@/lib/services/branding";
 import { getSubscription } from "@/lib/services/subscriptions";
 import { getFileStorage } from "@/lib/storage/r2";
 
@@ -30,19 +29,21 @@ export default async function OrgShellLayout({
     requireSession(),
     requireMembership(orgId),
   ]);
-  const [orgs, branding, subscription] = await Promise.all([
+  const [orgList, subscription] = await Promise.all([
     listUserOrganizations(getDb(), session.user.id),
-    getBranding(getDb(), orgId),
     getSubscription(getDb(), orgId),
   ]);
-  let logoUrl: string | null = null;
-  if (branding.logoKey) {
-    try {
-      logoUrl = getFileStorage().publicUrl(branding.logoKey);
-    } catch {
-      logoUrl = null; // storage not configured in this environment
+  const orgs = orgList.map(({ logoKey, ...org }) => {
+    let logoUrl: string | null = null;
+    if (logoKey) {
+      try {
+        logoUrl = getFileStorage().publicUrl(logoKey);
+      } catch {
+        logoUrl = null; // storage not configured in this environment
+      }
     }
-  }
+    return { ...org, logoUrl };
+  });
 
 
   return (
@@ -50,7 +51,6 @@ export default async function OrgShellLayout({
       <AppSidebar
         orgs={orgs}
         currentOrgId={orgId}
-        logoUrl={logoUrl}
         session={session}
         // upgrade entry in the user menu only while the org is on Free
         upgradeHref={

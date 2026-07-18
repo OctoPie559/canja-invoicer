@@ -134,6 +134,13 @@
       "when": 1783966103230,
       "tag": "0018_payment_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784210450442,
+      "tag": "0019_ask_canja",
+      "breakpoints": true
     }
   ]
 }
