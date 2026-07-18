@@ -50,10 +50,13 @@ describe("narrowExtraction (per-intent params + honest degradation)", () => {
     ).toEqual({ intent: "unsupported", params: { reason: "ambiguous" } });
   });
 
-  it("degrades revenue_by_period without period or metric to ambiguous", () => {
+  it("revenue_by_period: missing period defaults to all_time; missing metric stays ambiguous", () => {
     expect(
       narrowExtraction({ ...base, intent: "revenue_by_period", metric: "invoiced" }),
-    ).toEqual({ intent: "unsupported", params: { reason: "ambiguous" } });
+    ).toEqual({
+      intent: "revenue_by_period",
+      params: { period: "all_time", metric: "invoiced" },
+    });
     expect(
       narrowExtraction({
         ...base,
