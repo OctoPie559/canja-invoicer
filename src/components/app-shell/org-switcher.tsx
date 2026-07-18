@@ -21,19 +21,20 @@ export interface OrgSummary {
   id: string;
   name: string;
   role: string;
+  /** resolved server-side — R2 env vars never reach the client bundle */
+  logoUrl: string | null;
 }
 
 /** Workspace switcher at the very top of the sidebar (per design brief). */
 export function OrgSwitcher({
   orgs,
   currentOrgId,
-  logoUrl,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
-  logoUrl?: string | null
 }) {
   const current = orgs.find((o) => o.id === currentOrgId);
+  const logoUrl = current?.logoUrl ?? null;
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -78,11 +79,11 @@ export function OrgSwitcher({
             {orgs.map((org) => (
               <DropdownMenuItem key={org.id} asChild>
                 <Link href={`/orgs/${org.id}`}>
-                  {logoUrl ? (
+                  {org.logoUrl ? (
                     <Image
                       width={24}
                       height={24}
-                      src={logoUrl}
+                      src={org.logoUrl}
                       alt={org.name}
                       className="size-6 rounded-sm"
                       loading="eager"

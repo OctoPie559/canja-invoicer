@@ -26,6 +26,7 @@
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.23.0",
     "next": "15.5.20",
+    "openai": "^6.48.0",
     "radix-ui": "^1.6.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite-pgvector": "^0.0.5",
     "@eslint/eslintrc": "^3",
     "@react-email/ui": "^6.6.6",
     "@tailwindcss/postcss": "^4",

@@ -61,6 +61,13 @@ export class ImmutableDocumentError extends DomainError {
   }
 }
 
+/** Too many requests in the window (brief §6 rate limiting). */
+export class RateLimitError extends DomainError {
+  constructor(message: string) {
+    super("rate_limited", message);
+  }
+}
+
 /** Money invariant violated (currency mismatch, bad amount, ...). */
 export class MoneyError extends DomainError {
   constructor(message: string) {
