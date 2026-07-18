@@ -56,7 +56,6 @@ export function AppSidebar({
   const orgRoot = `/orgs/${currentOrgId}`;
   const workspaceItems = [
     { title: "Overview", href: orgRoot, icon: LayoutDashboard, exact: true },
-    { title: "Ask Canja", href: `${orgRoot}/ask`, icon: Sparkles },
     { title: "Customers", href: `${orgRoot}/customers`, icon: Users },
     { title: "Products & services", href: `${orgRoot}/products`, icon: Package },
   ];
@@ -102,6 +101,23 @@ export function AppSidebar({
               {salesItems.map((item) => (
                 <NavItem key={item.href} item={item} pathname={pathname} />
               ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel className="tracking-widest uppercase">
+            Support
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <NavItem
+                item={{
+                  title: "Ask Canja",
+                  href: `${orgRoot}/ask`,
+                  icon: Sparkles,
+                }}
+                pathname={pathname}
+              />
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
