@@ -484,15 +484,25 @@ export async function acceptInvitation(
 export async function listUserOrganizations(
   db: Database,
   userId: string,
-): Promise<Array<{ id: string; name: string; role: string }>> {
+): Promise<
+  Array<{ id: string; name: string; role: string; logoKey: string | null }>
+> {
   const memberships = await db
     .select({ organizationId: member.organizationId, role: member.role })
     .from(member)
     .where(eq(member.userId, userId));
   if (memberships.length === 0) return [];
   const orgs = await db
-    .select({ id: organization.id, name: organization.name })
+    .select({
+      id: organization.id,
+      name: organization.name,
+      logoKey: organizationBranding.logoKey,
+    })
     .from(organization)
+    .leftJoin(
+      organizationBranding,
+      eq(organizationBranding.organizationId, organization.id),
+    )
     .where(
       inArray(
         organization.id,

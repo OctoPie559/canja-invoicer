@@ -37,13 +37,11 @@ import { UserMenu } from "./user-menu";
 export function AppSidebar({
   orgs,
   currentOrgId,
-  logoUrl,
   session,
   upgradeHref,
 }: {
   orgs: OrgSummary[];
   currentOrgId: string;
-  logoUrl?: string | null;
   session: {
     user: {
       name: string;
@@ -80,7 +78,7 @@ export function AppSidebar({
         <Logo />
       </div>
       <SidebarHeader className="px-3">
-        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} logoUrl={logoUrl} />
+        <OrgSwitcher orgs={orgs} currentOrgId={currentOrgId} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
