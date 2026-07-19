@@ -235,7 +235,11 @@ export default async function InvoiceWorkspacePage({
           )}
           {/* once past due the reminder takes over — a single, unambiguous
               "chase this" action instead of Send + Reminder side by side */}
-          {!draft && !pastDue && can(role, "invoice.send") && status !== "void" && (
+          {!draft &&
+            !pastDue &&
+            can(role, "invoice.send") &&
+            status !== "void" &&
+            status !== "paid" && (
             <SendInvoiceDialog
               organizationId={orgId}
               invoiceId={invoiceId}
@@ -260,7 +264,13 @@ export default async function InvoiceWorkspacePage({
               }))}
             />
           )}
-          {!draft && status !== "void" && can(role, "credit_note.create") && (
+          {/* issue 17: a paid invoice is settled — no Send, no Credit. (Refunds
+              on a paid invoice would be a deliberate credit-note flow, not this
+              inline button.) */}
+          {!draft &&
+            status !== "void" &&
+            status !== "paid" &&
+            can(role, "credit_note.create") && (
             <Button asChild variant="outline" size="sm">
               <Link href={`/orgs/${orgId}/credit-notes/new?invoiceId=${invoiceId}`}>
                 Credit
