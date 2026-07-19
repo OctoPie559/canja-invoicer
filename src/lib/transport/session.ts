@@ -19,6 +19,11 @@ export const requireSession = cache(async () => {
   return session;
 });
 
+/** Session or null — for pages reachable while logged out (e.g. invitations). */
+export const getOptionalSession = cache(async () => {
+  return auth.api.getSession({ headers: await headers() });
+});
+
 export async function requestMeta(): Promise<RequestMeta> {
   const h = await headers();
   return {
