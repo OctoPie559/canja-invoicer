@@ -551,8 +551,13 @@ export async function updateOrganizationName(
   });
 }
 
-/** Owners in an org (the last-owner guard for remove/leave). */
-async function ownerCount(
+/**
+ * Owners in an org, locking the owner rows FOR UPDATE — the last-owner guard.
+ * Without the lock, two owners leaving concurrently each lock only their own
+ * row, both read count 2, both delete, and the org is left ownerless. Locking
+ * the shared owner set serializes them so the second sees the committed count.
+ */
+async function lockedOwnerCount(
   tx: Transaction,
   organizationId: string,
 ): Promise<number> {
@@ -561,7 +566,8 @@ async function ownerCount(
     .from(member)
     .where(
       and(eq(member.organizationId, organizationId), eq(member.role, "owner")),
-    );
+    )
+    .for("update");
   return rows.length;
 }
 
@@ -632,7 +638,11 @@ export async function leaveOrganization(
       )
       .for("update");
     if (!self) throw new NotFoundError("member");
-    if (self.role === "owner" && (await ownerCount(tx, ctx.organizationId)) <= 1) {
+    // lock the owner set (not just self) so concurrent owner-leaves serialize
+    if (
+      self.role === "owner" &&
+      (await lockedOwnerCount(tx, ctx.organizationId)) <= 1
+    ) {
       throw new ValidationError(
         "Transfer ownership or delete the organization before leaving",
       );
