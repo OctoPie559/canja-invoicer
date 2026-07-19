@@ -54,9 +54,13 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user: u, url }) => {
+      // Better Auth defaults the post-verify redirect to "/"; land verified
+      // users in their workspace instead (/dashboard forwards into the org).
+      const verifyUrl = new URL(url);
+      verifyUrl.searchParams.set("callbackURL", "/dashboard");
       await getEmailSender().send({
         to: u.email,
-        ...(await verificationEmail({ name: u.name, url })),
+        ...(await verificationEmail({ name: u.name, url: verifyUrl.toString() })),
       });
     },
   },

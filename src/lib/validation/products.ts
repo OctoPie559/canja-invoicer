@@ -4,7 +4,11 @@ import { SUPPORTED_CURRENCIES } from "./currencies";
 /** Shared client/server schemas; the server re-parses every input (§5.2). */
 
 const productFields = {
-  name: z.string().trim().min(2).max(160),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Product name must be at least 2 characters")
+    .max(160),
   productType: z.enum(["goods", "service"]).default("service"),
   description: z
     .string()
