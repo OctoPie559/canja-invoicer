@@ -550,3 +550,100 @@ export async function updateOrganizationName(
     });
   });
 }
+
+/** Owners in an org (the last-owner guard for remove/leave). */
+async function ownerCount(
+  tx: Transaction,
+  organizationId: string,
+): Promise<number> {
+  const rows = await tx
+    .select({ id: member.id })
+    .from(member)
+    .where(
+      and(eq(member.organizationId, organizationId), eq(member.role, "owner")),
+    );
+  return rows.length;
+}
+
+/**
+ * Remove another member (issue 7). Admin+ only (member.remove). Owners are
+ * protected — ownership transfer is a separate flow — and you cannot remove
+ * yourself here (use leaveOrganization). Membership is hard-deleted; the
+ * per-request membership check denies the removed user immediately.
+ */
+export async function removeMember(
+  db: Database,
+  ctx: ActorContext,
+  targetUserId: string,
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("member.remove");
+  if (!targetUserId) throw new ValidationError("A member is required");
+  if (targetUserId === ctx.actorId) {
+    throw new ValidationError("Use “Leave organization” to remove yourself");
+  }
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "member.remove");
+
+    const [target] = await tx
+      .select({ id: member.id, role: member.role })
+      .from(member)
+      .where(
+        and(
+          eq(member.organizationId, ctx.organizationId),
+          eq(member.userId, targetUserId),
+        ),
+      )
+      .for("update");
+    if (!target) throw new NotFoundError("member");
+    if (target.role === "owner") {
+      throw new ValidationError("An owner cannot be removed");
+    }
+
+    await tx.delete(member).where(eq(member.id, target.id));
+    await writeAudit(tx, ctx, {
+      action: "member.removed",
+      entityType: "member",
+      entityId: targetUserId,
+      changes: { before: { role: target.role }, after: null },
+    });
+  });
+}
+
+/**
+ * Leave the organization yourself (issue 7). Anyone may leave except the last
+ * owner — they must transfer ownership or delete the org first, so an org is
+ * never left ownerless.
+ */
+export async function leaveOrganization(
+  db: Database,
+  ctx: ActorContext,
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("member.remove");
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const [self] = await tx
+      .select({ id: member.id, role: member.role })
+      .from(member)
+      .where(
+        and(
+          eq(member.organizationId, ctx.organizationId),
+          eq(member.userId, ctx.actorId!),
+        ),
+      )
+      .for("update");
+    if (!self) throw new NotFoundError("member");
+    if (self.role === "owner" && (await ownerCount(tx, ctx.organizationId)) <= 1) {
+      throw new ValidationError(
+        "Transfer ownership or delete the organization before leaving",
+      );
+    }
+
+    await tx.delete(member).where(eq(member.id, self.id));
+    await writeAudit(tx, ctx, {
+      action: "member.left",
+      entityType: "member",
+      entityId: ctx.actorId!,
+      changes: { before: { role: self.role }, after: null },
+    });
+  });
+}

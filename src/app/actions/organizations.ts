@@ -9,6 +9,8 @@ import {
   acceptInvitation,
   createOrganization,
   inviteMember,
+  leaveOrganization,
+  removeMember,
   revokeInvitation,
 } from "@/lib/services/organizations";
 import {
@@ -86,7 +88,28 @@ export async function inviteMemberAction(
   } catch (error) {
     return mapError(error);
   }
-  redirect(`/orgs/${organizationId}`);
+  // stay on the members page so the inviter sees the pending list update
+  redirect(`/orgs/${organizationId}/settings/members`);
+}
+
+export async function removeMemberAction(
+  organizationId: string,
+  targetUserId: string,
+): Promise<void> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  await runWithActor(ctx, () => removeMember(getDb(), ctx, targetUserId));
+  redirect(`/orgs/${organizationId}/settings/members`);
+}
+
+export async function leaveOrganizationAction(
+  organizationId: string,
+): Promise<void> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  await runWithActor(ctx, () => leaveOrganization(getDb(), ctx));
+  // no longer a member — leave the org's routes entirely
+  redirect("/dashboard");
 }
 
 export async function revokeInvitationAction(
