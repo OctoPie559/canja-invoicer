@@ -142,9 +142,11 @@ export function narrowExtraction(e: RouterExtraction): IntentParams {
     case "overdue_list":
       return { intent: e.intent, params: { limit: e.limit ?? 10 } };
     case "revenue_by_period": {
-      const period: Period | null =
-        e.period ?? (e.from && e.to ? { from: e.from, to: e.to } : null);
-      if (!period || !e.metric) return ambiguous;
+      // no stated time frame = all time (the answer names the period, so a
+      // safe default beats bouncing the user with "ambiguous")
+      const period: Period =
+        e.period ?? (e.from && e.to ? { from: e.from, to: e.to } : "all_time");
+      if (!e.metric) return ambiguous;
       return { intent: e.intent, params: { period, metric: e.metric } };
     }
     case "payment_status":

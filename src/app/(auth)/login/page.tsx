@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
 import { AuthHeader } from "../auth-header";
+import { safeRedirect } from "@/lib/format/redirect";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function LoginPage() {
       setError(error.message ?? "Sign in failed");
       return;
     }
-    router.push("/dashboard");
+    router.push(safeRedirect(new URLSearchParams(window.location.search).get("redirect")));
   }
 
   return (

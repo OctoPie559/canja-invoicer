@@ -10,11 +10,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/password-input";
 import { AuthHeader } from "../auth-header";
+import { safeRedirect } from "@/lib/format/redirect";
 
 export default function SignupPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // when arriving from an invitation, the address is fixed (accept checks it)
+  const [invitedEmail] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (new URLSearchParams(window.location.search).get("email") ?? ""),
+  );
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,7 +38,7 @@ export default function SignupPage() {
       setError(error.message ?? "Sign up failed");
       return;
     }
-    router.push("/dashboard");
+    router.push(safeRedirect(new URLSearchParams(window.location.search).get("redirect")));
   }
 
   return (
@@ -51,7 +58,20 @@ export default function SignupPage() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" name="email" type="email" required className="h-11" />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          className="h-11"
+          defaultValue={invitedEmail}
+          readOnly={Boolean(invitedEmail)}
+        />
+        {invitedEmail && (
+          <p className="text-xs text-muted-foreground">
+            Using the address your invitation was sent to.
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Password (min 8 characters)</Label>

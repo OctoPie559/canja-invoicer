@@ -17,7 +17,11 @@ const optionalTrimmed = (max: number) =>
     .nullish();
 
 const customerFields = {
-  name: z.string().trim().min(2).max(160),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Customer name must be at least 2 characters")
+    .max(160),
   customerType: z.enum(["business", "individual"]).default("business"),
   addressLine1: optionalTrimmed(200),
   addressLine2: optionalTrimmed(200),

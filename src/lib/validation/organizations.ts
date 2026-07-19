@@ -3,7 +3,11 @@ import { z } from "zod";
 /** Shared client/server schemas; the server re-parses every input (§5.2). */
 
 export const createOrganizationSchema = z.object({
-  name: z.string().trim().min(2).max(120),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Organization name must be at least 2 characters")
+    .max(120),
   type: z.enum(["personal", "business"]).default("personal"),
 });
 export type CreateOrganizationInput = z.input<typeof createOrganizationSchema>;
