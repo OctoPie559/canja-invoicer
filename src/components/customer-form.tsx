@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { ActionState } from "@/app/actions/organizations";
 import {
   createCustomerAction,
+  createCustomerInlineAction,
   updateCustomerAction,
 } from "@/app/actions/customers";
+
+/** Shape the invoice builder consumes when a customer is created inline. */
+export interface CreatedCustomer {
+  id: string;
+  name: string;
+  paymentTermsDays: number | null;
+}
 import { PAYMENT_TERMS_PRESETS } from "@/lib/domain/payment-terms";
 import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
 import { validateImageFile } from "@/lib/storage/images";
@@ -214,6 +222,8 @@ export function CustomerForm({
   contacts,
   logoUrl,
   cancelHref,
+  onCreated,
+  onCancel,
 }: {
   organizationId: string;
   customer?: CustomerFormValues;
@@ -222,8 +232,13 @@ export function CustomerForm({
   /** Current logo public URL (edit mode), for preview. */
   logoUrl?: string | null;
   cancelHref: string;
+  /** Inline mode (e.g. invoice builder): return the new customer instead of
+   *  redirecting away from the half-built document. */
+  onCreated?: (customer: CreatedCustomer) => void;
+  onCancel?: () => void;
 }) {
   const editing = Boolean(customer?.id);
+  const inline = Boolean(onCreated);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [contactRows, setContactRows] = useState<ContactRowState[]>(() => {
     const rows = (contacts ?? []).map((c) => ({
@@ -244,6 +259,22 @@ export function CustomerForm({
     ),
     initialState,
   );
+
+  // inline submit: call the returning action and hand the customer back to the
+  // host (invoice builder) instead of navigating away
+  const [inlinePending, startInline] = useTransition();
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const inlineSubmit = (formData: FormData) => {
+    startInline(async () => {
+      const res = await createCustomerInlineAction(organizationId, formData);
+      if ("error" in res) setInlineError(res.error);
+      else onCreated!(res.customer);
+    });
+  };
+
+  const formAction = inline ? inlineSubmit : action;
+  const busy = inline ? inlinePending : pending;
+  const shownError = inline ? inlineError : state.error;
 
   const contactsPayload = JSON.stringify(
     contactRows
@@ -268,10 +299,10 @@ export function CustomerForm({
   const contactCount = contactRows.filter((r) => !r.deleted).length;
 
   return (
-    <form action={action} className="space-y-6">
-      {state.error && (
+    <form action={formAction} className="space-y-6">
+      {shownError && (
         <Alert variant="destructive">
-          <AlertDescription>{state.error}</AlertDescription>
+          <AlertDescription>{shownError}</AlertDescription>
         </Alert>
       )}
       <input type="hidden" name="contacts" value={contactsPayload} />
@@ -451,12 +482,18 @@ export function CustomerForm({
       </Tabs>
 
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button type="submit" disabled={pending || logoError !== null}>
-          {pending ? "Saving…" : editing ? "Save changes" : "Create customer"}
+        <Button type="submit" disabled={busy || logoError !== null}>
+          {busy ? "Saving…" : editing ? "Save changes" : "Create customer"}
         </Button>
-        <Button asChild type="button" variant="outline">
-          <Link href={cancelHref}>Cancel</Link>
-        </Button>
+        {inline ? (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Button asChild type="button" variant="outline">
+            <Link href={cancelHref}>Cancel</Link>
+          </Button>
+        )}
       </div>
     </form>
   );

@@ -1,13 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import type { ActionState } from "@/app/actions/organizations";
 import {
   createProductAction,
+  createProductInlineAction,
   updateProductAction,
 } from "@/app/actions/products";
+
+/** Shape the invoice builder consumes when a product is created inline. */
+export interface CreatedProduct {
+  id: string;
+  name: string;
+  unitPrice: string;
+  currency: string;
+  defaultTaxRateBps: number | null;
+}
 import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
 import { validateImageFile } from "@/lib/storage/images";
 import { cn } from "@/lib/utils";
@@ -152,6 +162,9 @@ export function ProductForm({
   unitOptions,
   imageUrl,
   cancelHref,
+  defaultCurrency,
+  onCreated,
+  onCancel,
 }: {
   organizationId: string;
   product?: ProductFormValues;
@@ -160,8 +173,15 @@ export function ProductForm({
   /** Current image public URL (edit mode), for preview. */
   imageUrl?: string | null;
   cancelHref: string;
+  /** Prefill the currency (inline from an invoice in that currency). */
+  defaultCurrency?: string;
+  /** Inline mode (invoice builder): return the new product instead of
+   *  redirecting away from the half-built document. */
+  onCreated?: (product: CreatedProduct) => void;
+  onCancel?: () => void;
 }) {
   const editing = Boolean(product?.id);
+  const inline = Boolean(onCreated);
   const [imageError, setImageError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
     (editing ? updateProductAction : createProductAction).bind(
@@ -171,11 +191,25 @@ export function ProductForm({
     initialState,
   );
 
+  const [inlinePending, startInline] = useTransition();
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const inlineSubmit = (formData: FormData) => {
+    startInline(async () => {
+      const res = await createProductInlineAction(organizationId, formData);
+      if ("error" in res) setInlineError(res.error);
+      else onCreated!(res.product);
+    });
+  };
+
+  const formAction = inline ? inlineSubmit : action;
+  const busy = inline ? inlinePending : pending;
+  const shownError = inline ? inlineError : state.error;
+
   return (
-    <form action={action} className="space-y-6">
-      {state.error && (
+    <form action={formAction} className="space-y-6">
+      {shownError && (
         <Alert variant="destructive">
-          <AlertDescription>{state.error}</AlertDescription>
+          <AlertDescription>{shownError}</AlertDescription>
         </Alert>
       )}
       {editing && (
@@ -279,7 +313,10 @@ export function ProductForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="p-currency">Currency</Label>
-            <Select name="currency" defaultValue={product?.currency ?? "KES"}>
+            <Select
+              name="currency"
+              defaultValue={product?.currency ?? defaultCurrency ?? "KES"}
+            >
               <SelectTrigger id="p-currency" className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -305,12 +342,18 @@ export function ProductForm({
       </fieldset>
 
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button type="submit" disabled={pending || imageError !== null}>
-          {pending ? "Saving…" : editing ? "Save changes" : "Create product"}
+        <Button type="submit" disabled={busy || imageError !== null}>
+          {busy ? "Saving…" : editing ? "Save changes" : "Create product"}
         </Button>
-        <Button asChild type="button" variant="outline">
-          <Link href={cancelHref}>Cancel</Link>
-        </Button>
+        {inline ? (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : (
+          <Button asChild type="button" variant="outline">
+            <Link href={cancelHref}>Cancel</Link>
+          </Button>
+        )}
       </div>
     </form>
   );
