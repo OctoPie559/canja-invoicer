@@ -82,18 +82,6 @@ function customerFields(formData: FormData) {
   };
 }
 
-/** Optional inline primary contact from the create form. */
-function inlinePrimaryContact(formData: FormData) {
-  const firstName = String(formData.get("contactFirstName") ?? "").trim();
-  if (!firstName) return null;
-  return {
-    firstName,
-    lastName: String(formData.get("contactLastName") ?? ""),
-    email: String(formData.get("contactEmail") ?? ""),
-    mobile: String(formData.get("contactMobile") ?? ""),
-  };
-}
-
 export async function createCustomerAction(
   organizationId: string,
   _prev: ActionState,
@@ -113,10 +101,7 @@ export async function createCustomerAction(
       createCustomer(
         getDb(),
         ctx,
-        {
-          ...customerFields(formData),
-          primaryContact: inlinePrimaryContact(formData),
-        },
+        customerFields(formData),
         contactRows as never,
       ),
     );
@@ -148,10 +133,7 @@ export async function createCustomerInlineAction(
   try {
     const fields = customerFields(formData);
     const { customerId } = await runWithActor(ctx, () =>
-      createCustomer(getDb(), ctx, {
-        ...fields,
-        primaryContact: inlinePrimaryContact(formData),
-      }),
+      createCustomer(getDb(), ctx, fields),
     );
     return {
       customer: {
