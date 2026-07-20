@@ -26,10 +26,13 @@ import {
  */
 export default async function PublicInvoicePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ paid?: string }>;
 }) {
   const { token } = await params;
+  const { paid } = await searchParams;
   const data = await getInvoiceByPublicToken(getDb(), token);
   if (!data) notFound();
   const { snapshot, status, amountPaidMinor, watermark, logoUrl } = data;
@@ -59,6 +62,16 @@ export default async function PublicInvoicePage({
             </a>
           </Button>
         </div>
+
+        {/* issue 16: the payer returns from checkout to a clear confirmation,
+            on the same view that now reflects the settled balance */}
+        {paid === "1" && (
+          <p className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-800 dark:text-emerald-300">
+            {balance.isZero()
+              ? "Payment received — this invoice is now paid in full. A receipt is on its way to your email."
+              : "Payment received — thank you. Your remaining balance is shown below."}
+          </p>
+        )}
 
         {status === "void" && (
           <p className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm">

@@ -240,14 +240,19 @@ export function PdfTemplatePicker({
             <button
               key={t.id}
               type="button"
-              onClick={() => setSelected(t.id)}
+              onClick={() => !locked && setSelected(t.id)}
+              disabled={locked}
+              title={locked ? "Available on the Pro plan" : undefined}
               className={
                 "rounded-md border p-3 text-left transition-colors " +
-                (active
-                  ? "border-primary ring-2 ring-primary/30"
-                  : "hover:border-muted-foreground/40")
+                (locked
+                  ? "cursor-not-allowed opacity-60"
+                  : active
+                    ? "border-primary ring-2 ring-primary/30"
+                    : "hover:border-muted-foreground/40")
               }
               aria-pressed={active}
+              aria-disabled={locked}
             >
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-medium">{t.name}</span>
