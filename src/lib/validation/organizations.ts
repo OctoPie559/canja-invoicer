@@ -23,3 +23,26 @@ export const acceptInvitationSchema = z.object({
   invitationId: z.string().min(1),
 });
 export type AcceptInvitationInput = z.input<typeof acceptInvitationSchema>;
+
+/** Onboarding "how did you hear about us" (issue 1) — data collection only. */
+export const REFERRAL_SOURCES = [
+  "search",
+  "social",
+  "friend",
+  "whatsapp",
+  "twitter",
+  "instagram",
+  "other",
+] as const;
+export const referralSourceSchema = z.enum(REFERRAL_SOURCES);
+export type ReferralSource = z.infer<typeof referralSourceSchema>;
+
+export const REFERRAL_LABELS: Record<ReferralSource, string> = {
+  search: "Search engine (Google, Bing…)",
+  social: "Social media",
+  friend: "Friend or colleague",
+  whatsapp: "WhatsApp",
+  twitter: "X (Twitter)",
+  instagram: "Instagram",
+  other: "Other",
+};
