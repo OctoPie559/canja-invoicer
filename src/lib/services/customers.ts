@@ -24,6 +24,9 @@ import { writeAudit } from "@/lib/audit/write";
 import { changedFields, jsonSafe } from "@/lib/audit/diff";
 import type { ActorContext } from "@/lib/audit/context";
 import { authorize } from "@/lib/authz/permissions";
+import { assertImageUpload, imageExtension } from "@/lib/storage/images";
+import type { FileStorage } from "@/lib/storage/port";
+import { getFileStorage } from "@/lib/storage/r2";
 import { getMembership } from "./organizations";
 import {
   createCustomerSchema,
@@ -61,6 +64,10 @@ export async function createCustomer(
   db: Database,
   ctx: ActorContext,
   input: CreateCustomerInput,
+  /** Full contact grid from the create form (issue 12): multiple people in
+   *  the same transaction as the company. Takes precedence over the single
+   *  inline `primaryContact` when provided. */
+  contactRows?: ContactRowInput[],
 ): Promise<{ customerId: string }> {
   const data = createCustomerSchema.parse(input);
   if (!ctx.actorId) throw new PermissionError("customer.create");
@@ -94,8 +101,11 @@ export async function createCustomer(
       entityId: customerId,
       changes: { after: jsonSafe({ ...fields }) },
     });
-    // optional inline primary contact — same transaction, own audit row
-    if (primaryContact) {
+    // contact persons — same transaction, each with its own audit row.
+    // The full grid (issue 12) wins; otherwise the single inline contact.
+    if (contactRows && contactRows.some((r) => !r.deleted)) {
+      await applyContactChanges(tx, ctx, customerId, contactRows);
+    } else if (primaryContact) {
       await insertContact(tx, ctx, customerId, primaryContact, true);
     }
   });
@@ -639,4 +649,114 @@ export async function listCustomersWithPrimaryContact(
         }
       : null,
   }));
+}
+
+export interface CustomerLogoDeps {
+  storage?: FileStorage;
+}
+
+/**
+ * Customer logo (issue 13): shown on the customer overview. Referenced only by
+ * the live row (invoice snapshots carry the vendor's branding, never the
+ * customer's logo), so the superseded object is deleted after commit — same
+ * semantics as product images and contact photos.
+ */
+export async function uploadCustomerLogo(
+  db: Database,
+  ctx: ActorContext,
+  input: { customerId: string; bytes: Uint8Array; contentType: string },
+  deps: CustomerLogoDeps = {},
+): Promise<{ logoKey: string }> {
+  if (!ctx.actorId) throw new PermissionError("customer.update");
+  assertImageUpload(input.bytes, input.contentType);
+  const storage = deps.storage ?? getFileStorage();
+  const logoKey = `orgs/${ctx.organizationId}/customers/${input.customerId}/logo-${newId()}.${imageExtension(input.contentType as never)}`;
+
+  // authorization and existence BEFORE the storage side effect
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "customer.update");
+    const [row] = await tx
+      .select({ id: customers.id })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.id, input.customerId),
+          eq(customers.organizationId, ctx.organizationId),
+          isNull(customers.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundError("Customer");
+  });
+
+  await storage.put({
+    key: logoKey,
+    body: input.bytes,
+    contentType: input.contentType,
+  });
+
+  let previousKey: string | null = null;
+  try {
+    await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+      const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+      authorize(caller.role, "customer.update");
+      const [before] = await tx
+        .select()
+        .from(customers)
+        .where(
+          and(
+            eq(customers.id, input.customerId),
+            eq(customers.organizationId, ctx.organizationId),
+            isNull(customers.deletedAt),
+          ),
+        )
+        .for("update");
+      if (!before) throw new NotFoundError("Customer");
+      previousKey = before.logoKey;
+
+      await tx
+        .update(customers)
+        .set({ logoKey, version: before.version + 1, updatedAt: new Date() })
+        .where(eq(customers.id, input.customerId));
+      const [after] = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.id, input.customerId));
+      await tx.insert(customerVersions).values({
+        id: newId(),
+        organizationId: ctx.organizationId,
+        customerId: input.customerId,
+        version: after.version,
+        data: jsonSafe(after),
+        changedBy: ctx.actorId,
+      });
+      await writeAudit(tx, ctx, {
+        action: "customer.logo_updated",
+        entityType: "customer",
+        entityId: input.customerId,
+        changes: { before: { logoKey: before.logoKey }, after: { logoKey } },
+      });
+    });
+  } catch (error) {
+    await storage.delete(logoKey).catch(() => {});
+    throw error;
+  }
+
+  if (previousKey) {
+    await storage.delete(previousKey).catch(() => {});
+  }
+  return { logoKey };
+}
+
+/** logoKey → public URL; null when storage is not configured. */
+export function customerLogoUrl(
+  logoKey: string | null | undefined,
+): string | null {
+  if (!logoKey) return null;
+  try {
+    return getFileStorage().publicUrl(logoKey);
+  } catch {
+    return null;
+  }
 }

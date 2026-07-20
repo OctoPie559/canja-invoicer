@@ -9,6 +9,7 @@ import {
   updateProductAction,
 } from "@/app/actions/products";
 import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
+import { validateImageFile } from "@/lib/storage/images";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -149,15 +150,19 @@ export function ProductForm({
   organizationId,
   product,
   unitOptions,
+  imageUrl,
   cancelHref,
 }: {
   organizationId: string;
   product?: ProductFormValues;
   /** Unit labels already used by the org. */
   unitOptions: string[];
+  /** Current image public URL (edit mode), for preview. */
+  imageUrl?: string | null;
   cancelHref: string;
 }) {
   const editing = Boolean(product?.id);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [state, action, pending] = useActionState(
     (editing ? updateProductAction : createProductAction).bind(
       null,
@@ -221,7 +226,37 @@ export function ProductForm({
               defaultValue={product?.unitLabel}
             />
           </div>
-          {/* product image slot lands here with the R2 storage adapter (slice 4) */}
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="p-image">Image</Label>
+            <div className="flex items-center gap-4">
+              {imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- R2-hosted
+                <img
+                  src={imageUrl}
+                  alt=""
+                  className="h-12 w-12 rounded border bg-white object-contain p-1"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded border border-dashed text-[10px] text-muted-foreground">
+                  Image
+                </div>
+              )}
+              <Input
+                id="p-image"
+                type="file"
+                name="image"
+                accept="image/png,image/jpeg"
+                className="max-w-xs"
+                onChange={(e) =>
+                  setImageError(validateImageFile(e.target.files?.[0] ?? null))
+                }
+              />
+            </div>
+            {imageError && <p className="text-xs text-destructive">{imageError}</p>}
+            <p className="text-xs text-muted-foreground">
+              PNG or JPEG, up to 512 KB.
+            </p>
+          </div>
         </div>
       </fieldset>
 
@@ -270,7 +305,7 @@ export function ProductForm({
       </fieldset>
 
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || imageError !== null}>
           {pending ? "Saving…" : editing ? "Save changes" : "Create product"}
         </Button>
         <Button asChild type="button" variant="outline">
