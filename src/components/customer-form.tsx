@@ -13,6 +13,8 @@ import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CountrySelect } from "@/components/country-select";
+import { PhoneInput } from "@/components/phone-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -159,20 +161,16 @@ function ContactRowsEditor({
             </div>
             <div className="space-y-1">
               <Label>Work phone</Label>
-              <Input
-                type="tel"
-                placeholder="+2547…"
+              <PhoneInput
                 value={row.workPhone ?? ""}
-                onChange={(e) => patch(row.key, { workPhone: e.target.value })}
+                onChange={(v) => patch(row.key, { workPhone: v })}
               />
             </div>
             <div className="space-y-1">
               <Label>Mobile</Label>
-              <Input
-                type="tel"
-                placeholder="+2547…"
+              <PhoneInput
                 value={row.mobile ?? ""}
-                onChange={(e) => patch(row.key, { mobile: e.target.value })}
+                onChange={(v) => patch(row.key, { mobile: v })}
               />
             </div>
             <div className="space-y-1">
@@ -368,7 +366,7 @@ export function CustomerForm({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="pc-mobile">Mobile</Label>
-                  <Input id="pc-mobile" name="contactMobile" type="tel" placeholder="+2547…" />
+                  <PhoneInput id="pc-mobile" name="contactMobile" />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -403,7 +401,7 @@ export function CustomerForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="c-country">Country</Label>
-                <Input id="c-country" name="country" defaultValue={customer?.country ?? ""} />
+                <CountrySelect id="c-country" name="country" defaultValue={customer?.country} />
               </div>
             </div>
           </fieldset>
@@ -426,7 +424,11 @@ export function CustomerForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="c-ship-country">Country</Label>
-                <Input id="c-ship-country" name="shippingCountry" defaultValue={customer?.shippingCountry ?? ""} />
+                <CountrySelect
+                  id="c-ship-country"
+                  name="shippingCountry"
+                  defaultValue={customer?.shippingCountry}
+                />
               </div>
             </div>
           </fieldset>
