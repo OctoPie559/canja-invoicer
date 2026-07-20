@@ -29,6 +29,7 @@ import {
   verifyAndProcessCharge,
 } from "@/lib/services/checkout";
 import {
+  cancelSubscription,
   expireLapsedSubscriptions,
   getSubscription,
 } from "@/lib/services/subscriptions";
@@ -733,12 +734,20 @@ describe("recurring renewals (wave 6, self-managed)", () => {
     fx = await createTwoOrgFixture(db);
   });
 
-  /** Put org A's subscription into an arbitrary state for the cron to act on. */
+  /** Put org A's subscription into an arbitrary state for the cron to act on,
+   *  clearing prior payment state so each case starts fresh (the renewal
+   *  reference is deterministic per period). */
   async function setSub(fields: Record<string, unknown>) {
     await db
       .update(subscriptions)
       .set(fields)
       .where(eq(subscriptions.organizationId, fx.orgA));
+    await db
+      .delete(paymentEvents)
+      .where(eq(paymentEvents.organizationId, fx.orgA));
+    await db
+      .delete(paymentIntents)
+      .where(eq(paymentIntents.organizationId, fx.orgA));
   }
 
   const autoDueState = {
@@ -841,5 +850,68 @@ describe("recurring renewals (wave 6, self-managed)", () => {
     });
     const res = await remindDueManualSubscriptions(db, now);
     expect(res).toHaveLength(0);
+  });
+
+  it("a lost renewal response is retried on the SAME reference — never double-charges", async () => {
+    await setSub({ ...autoDueState, graceUntil: null });
+    const subIntents = () =>
+      db
+        .select({ reference: paymentIntents.reference })
+        .from(paymentIntents)
+        .where(
+          and(
+            eq(paymentIntents.organizationId, fx.orgA),
+            eq(paymentIntents.purpose, "subscription"),
+          ),
+        );
+
+    // run 1: provider API error (lost response) — grace, one pending intent
+    provider.authOutcome = "apierror";
+    await renewDueSubscriptions(db, provider, now);
+    const first = await subIntents();
+    expect(first).toHaveLength(1);
+
+    // run 2 (same period): success — reuses the SAME reference, so there is
+    // still exactly one charge attempt; it settles and extends the period
+    provider.authOutcome = "success";
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res.renewed).toBe(1);
+    const second = await subIntents();
+    expect(second).toHaveLength(1);
+    expect(second[0].reference).toBe(first[0].reference);
+    expect(
+      (await getSubscription(db, fx.orgA)).currentPeriodEnd!.getTime(),
+    ).toBeGreaterThan(now.getTime());
+  });
+
+  it("cancelSubscription schedules cancel-at-period-end, idempotent + audited", async () => {
+    await setSub({
+      ...autoDueState,
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: new Date(now.getTime() + 20 * DAY),
+    });
+    const ownerCtx: ActorContext = {
+      actorType: "user",
+      actorId: fx.alice.id, // owner of org A
+      organizationId: fx.orgA,
+    };
+
+    await cancelSubscription(db, ownerCtx);
+    expect((await getSubscription(db, fx.orgA)).cancelAtPeriodEnd).toBe(true);
+
+    // idempotent — a second call is a no-op, not an error
+    await cancelSubscription(db, ownerCtx);
+    expect((await getSubscription(db, fx.orgA)).cancelAtPeriodEnd).toBe(true);
+
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.organizationId, fx.orgA),
+          eq(auditLog.action, "subscription.cancel_scheduled"),
+        ),
+      );
+    expect(audit).toBeDefined();
   });
 });

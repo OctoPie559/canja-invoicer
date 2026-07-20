@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
@@ -408,15 +408,21 @@ async function processEvent(
       }
 
       // subscription — capture a reusable card token for auto-renewal; a
-      // one-time (M-Pesa) authorization leaves the org in manual-renew mode
-      const reusableCard = Boolean(event.authorization?.reusable);
+      // one-time (M-Pesa) authorization is manual. Only change renewal_mode on
+      // a clear signal: a renewal response that lacks any authorization block
+      // (unexpected) must NOT flip an existing auto sub to manual, so we leave
+      // the stored mode untouched (undefined) in that case.
+      const auth = event.authorization;
+      const renewalMode: "auto" | "manual" | undefined = auth?.reusable
+        ? "auto"
+        : auth || event.method === "mpesa"
+          ? "manual"
+          : undefined;
       await activateProSubscription(tx, ctx, {
         interval: (intent.billingInterval as BillingInterval) ?? "monthly",
         startedAt: new Date(),
-        authorizationCode: reusableCard
-          ? event.authorization!.authorizationCode
-          : null,
-        renewalMode: reusableCard ? "auto" : "manual",
+        authorizationCode: auth?.reusable ? auth.authorizationCode : undefined,
+        renewalMode,
         providerCustomerId: event.customerCode ?? null,
       });
       await tx
@@ -553,6 +559,7 @@ export async function renewDueSubscriptions(
       organizationId: subscriptions.organizationId,
       authorizationCode: subscriptions.authorizationCode,
       billingInterval: subscriptions.billingInterval,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
     })
     .from(subscriptions)
     .where(
@@ -580,21 +587,46 @@ export async function renewDueSubscriptions(
     const email = await ownerEmail(db, organizationId);
     if (!email) continue; // no payer email — leave for a later run
 
-    const reference = newChargeReference();
+    // deterministic per (org, billing period): a retry after a lost response
+    // reuses the SAME reference, so Paystack dedups the charge — a renewal can
+    // never charge the card twice. The unique reference index makes the intent
+    // insert idempotent too.
+    const periodKey = row.currentPeriodEnd
+      ? Math.floor(row.currentPeriodEnd.getTime() / 1000)
+      : 0;
+    const reference = `cnj_rnw_${organizationId}_${periodKey}`;
     await withOrgTransaction(db, organizationId, async (tx) => {
-      await tx.insert(paymentIntents).values({
-        id: newId(),
-        organizationId,
-        purpose: "subscription",
-        billingInterval: interval,
-        reference,
-        provider: provider.name,
-        amountMinor: price.amountMinor,
-        currency: BILLING_CURRENCY,
-        status: "pending",
-        initiatedBy: null, // system-initiated renewal
-        expiresAt: new Date(now.getTime() + INTENT_TTL_MS),
-      });
+      const inserted = await tx
+        .insert(paymentIntents)
+        .values({
+          id: newId(),
+          organizationId,
+          purpose: "subscription",
+          billingInterval: interval,
+          reference,
+          provider: provider.name,
+          amountMinor: price.amountMinor,
+          currency: BILLING_CURRENCY,
+          status: "pending",
+          initiatedBy: null, // system-initiated renewal
+          expiresAt: new Date(now.getTime() + INTENT_TTL_MS),
+        })
+        .onConflictDoNothing({ target: paymentIntents.reference })
+        .returning({ id: paymentIntents.id });
+      if (inserted.length > 0) {
+        await writeAudit(tx, ctx, {
+          action: "subscription.renewal_initiated",
+          entityType: "subscription",
+          entityId: organizationId,
+          changes: {
+            after: {
+              reference,
+              amountMinor: String(price.amountMinor),
+              interval,
+            },
+          },
+        });
+      }
     });
 
     attempted++;
@@ -745,6 +777,15 @@ export async function reconcilePendingIntents(
         eq(paymentIntents.status, "pending"),
         lt(paymentIntents.expiresAt, now),
         isNull(paymentIntents.deletedAt),
+        // never abandon a SYSTEM renewal intent (subscription + no initiator):
+        // it uses a deterministic reference and is reconciled by the renewal
+        // cron, so abandoning it could let a paid-but-unsettled renewal go
+        // unactivated. Public invoice charges (also initiatedBy NULL) still get
+        // swept — they are `purpose = invoice`.
+        or(
+          ne(paymentIntents.purpose, "subscription"),
+          isNotNull(paymentIntents.initiatedBy),
+        ),
       ),
     );
 
@@ -757,7 +798,12 @@ export async function reconcilePendingIntents(
         .from(paymentIntents)
         .where(eq(paymentIntents.id, row.id))
         .for("update");
-      if (!intent || intent.status !== "pending" || intent.expiresAt >= now) {
+      if (
+        !intent ||
+        intent.status !== "pending" ||
+        intent.expiresAt >= now ||
+        (intent.purpose === "subscription" && intent.initiatedBy === null)
+      ) {
         return;
       }
       await tx
