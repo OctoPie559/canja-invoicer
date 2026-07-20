@@ -168,6 +168,59 @@ describe("settlement emails (issues 4 & 16)", () => {
     expect(sent[0].text).toContain(`https://app.example/orgs/${fx.orgA}/settings/billing`);
   });
 
+  it("stays within the intent's org — never emails another org's contact", async () => {
+    // org B has its own customer + primary contact
+    const actorInB = (): ActorContext => ({
+      actorType: "user",
+      actorId: fx.bob.id,
+      organizationId: fx.orgB,
+    });
+    await createCustomer(db, actorInB(), {
+      name: "Beta Ltd",
+      primaryContact: {
+        firstName: "Otieno",
+        lastName: "Odhiambo",
+        email: "otieno@beta.test",
+      },
+    });
+
+    // settle an org-A invoice
+    const invoiceId = await issuedInvoice();
+    const { paymentId } = await recordPayment(db, actorInA(), {
+      invoiceId,
+      amount: "1000.00",
+      currency: "KES",
+      method: "cash",
+      paidAt: "2026-07-20",
+    });
+    const reference = `ref-${newId()}`;
+    await db.insert(paymentIntents).values({
+      id: newId(),
+      organizationId: fx.orgA,
+      purpose: "invoice",
+      invoiceId,
+      reference,
+      provider: "paystack",
+      currency: "KES",
+      amountMinor: 100_000n,
+      status: "succeeded",
+      paymentId,
+      expiresAt: new Date("2026-07-21"),
+    });
+
+    const { sent, sender } = fakeSender();
+    await notifySettlement(db, reference, "invoice_paid", {
+      emailSender: sender,
+      baseUrl: "https://app.example",
+      renderReceipt,
+      renderUpgrade,
+    });
+
+    // exactly org A's contact, never org B's
+    expect(sent.map((m) => m.to)).toEqual(["grace@acme.test"]);
+    expect(sent.some((m) => m.to === "otieno@beta.test")).toBe(false);
+  });
+
   it("non-actionable reasons send nothing", async () => {
     const { sent, sender } = fakeSender();
     await notifySettlement(db, "whatever", "duplicate_event", { emailSender: sender, renderReceipt, renderUpgrade });

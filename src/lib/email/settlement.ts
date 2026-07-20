@@ -122,7 +122,14 @@ export async function notifySettlement(
       customerId: invoices.customerId,
     })
     .from(invoices)
-    .where(eq(invoices.id, intent.invoiceId))
+    // this runs outside RLS — re-assert the org on every read as
+    // defense-in-depth, even though the ids are intent-linked
+    .where(
+      and(
+        eq(invoices.id, intent.invoiceId),
+        eq(invoices.organizationId, intent.organizationId),
+      ),
+    )
     .limit(1);
   if (!inv?.displayNumber) return;
 
@@ -131,6 +138,7 @@ export async function notifySettlement(
     .from(customerContacts)
     .where(
       and(
+        eq(customerContacts.organizationId, intent.organizationId),
         eq(customerContacts.customerId, inv.customerId),
         eq(customerContacts.isPrimary, true),
         isNull(customerContacts.deletedAt),
@@ -146,14 +154,23 @@ export async function notifySettlement(
     const [pay] = await db
       .select({ amountMinor: payments.amountMinor })
       .from(payments)
-      .where(eq(payments.id, intent.paymentId))
+      .where(
+        and(
+          eq(payments.id, intent.paymentId),
+          eq(payments.organizationId, intent.organizationId),
+        ),
+      )
       .limit(1);
     if (pay) receivedMinor = pay.amountMinor;
   }
 
   const total = Money.fromMinor(inv.totalMinor, inv.currency);
   const paid = Money.fromMinor(inv.amountPaidMinor, inv.currency);
-  const balance = total.subtract(paid);
+  // clamp: an overpayment must never show as a negative balance on the receipt
+  const rawBalance = total.subtract(paid);
+  const balance = rawBalance.isNegative()
+    ? Money.zero(inv.currency)
+    : rawBalance;
   const received = Money.fromMinor(receivedMinor, inv.currency);
 
   const [org] = await db
