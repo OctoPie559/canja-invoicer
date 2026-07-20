@@ -100,8 +100,10 @@ export async function createOrgOnboardingAction(
           contentType: logo.type,
         }),
       );
-    } catch {
-      // best-effort — the org exists; a missing logo is fixable in settings
+    } catch (err) {
+      // best-effort — the org exists; a missing logo is fixable in settings.
+      // Breadcrumb so a systemic storage outage during onboarding is visible.
+      console.warn("onboarding logo upload failed", err);
     }
   }
 
