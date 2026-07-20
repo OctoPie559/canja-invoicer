@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/client";
 import { getPaymentProvider } from "@/lib/payments";
 import { processProviderEvent } from "@/lib/services/checkout";
+import { notifySettlement } from "@/lib/email/settlement";
 
 /**
  * Paystack webhook (ARCHITECTURE.md §6). Verifies the HMAC signature over the
@@ -30,6 +31,12 @@ export async function POST(request: Request) {
 
   if (!result.ok) {
     return NextResponse.json({ error: result.reason }, { status: 401 });
+  }
+  // best-effort confirmation email; never blocks the 200 the provider needs
+  if (result.reference) {
+    await notifySettlement(getDb(), result.reference, result.reason).catch(
+      () => {},
+    );
   }
   return NextResponse.json({ ok: true, reason: result.reason });
 }
