@@ -105,13 +105,12 @@ export function PhoneInput({
           <button
             type="button"
             aria-label="Country code"
-            className="flex h-9 shrink-0 items-center gap-1 rounded-md border bg-transparent px-2 text-sm"
+            className="flex shrink-0 items-center gap-1 border bg-transparent px-1 text-[10px]"
           >
-            <span>{country}</span>
             <span className="text-muted-foreground">
               +{getCountryCallingCode(country)}
             </span>
-            <ChevronsUpDown className="size-3.5 text-muted-foreground" />
+            <ChevronsUpDown className="size-2.5 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0">
