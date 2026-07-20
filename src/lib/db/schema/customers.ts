@@ -22,6 +22,9 @@ export const customers = pgTable(
       .references(() => organization.id),
     name: text("name").notNull(),
     customerType: text("customer_type").notNull().default("business"), // business | individual
+    // R2 object key for the customer logo; public URL resolved at read time.
+    // Shown on the customer overview (issue 13).
+    logoKey: text("logo_key"),
     // billing address
     addressLine1: text("address_line1"),
     addressLine2: text("address_line2"),

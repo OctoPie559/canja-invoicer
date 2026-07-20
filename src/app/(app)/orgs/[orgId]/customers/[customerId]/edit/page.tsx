@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { listContacts } from "@/lib/services/contacts";
-import { getCustomer } from "@/lib/services/customers";
+import { customerLogoUrl, getCustomer } from "@/lib/services/customers";
 import { requireMembership } from "@/lib/transport/org";
 import { CustomerForm } from "@/components/customer-form";
 import {
@@ -38,6 +38,7 @@ export default async function EditCustomerPage({
           organizationId={orgId}
           customer={customer}
           contacts={contacts}
+          logoUrl={customerLogoUrl(customer.logoKey)}
           cancelHref={`/orgs/${orgId}/customers/${customerId}`}
         />
       </CardContent>

@@ -12,6 +12,8 @@ import { validateImageFile } from "@/lib/storage/images";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CountrySelect } from "@/components/country-select";
+import { PhoneInput } from "@/components/phone-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -150,10 +152,10 @@ export function BrandingDetailsForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="b-country">Country</Label>
-          <Input
+          <CountrySelect
             id="b-country"
             name="country"
-            defaultValue={branding.country ?? ""}
+            defaultValue={branding.country}
           />
         </div>
         <div className="space-y-1.5">
@@ -167,12 +169,10 @@ export function BrandingDetailsForm({
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="b-phone">Phone</Label>
-          <Input
+          <PhoneInput
             id="b-phone"
             name="contactPhone"
-            type="tel"
-            placeholder="+2547…"
-            defaultValue={branding.contactPhone ?? ""}
+            defaultValue={branding.contactPhone}
           />
         </div>
         <div className="space-y-1.5">

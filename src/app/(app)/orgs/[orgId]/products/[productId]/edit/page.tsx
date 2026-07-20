@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
 import { Money } from "@/lib/domain/money";
-import { getProduct, listUnitLabels } from "@/lib/services/products";
+import {
+  getProduct,
+  listUnitLabels,
+  productImageUrl,
+} from "@/lib/services/products";
 import { requireMembership } from "@/lib/transport/org";
 import { ProductForm } from "@/components/product-form";
 import {
@@ -38,6 +42,7 @@ export default async function EditProductPage({
         <ProductForm
           organizationId={orgId}
           unitOptions={unitOptions}
+          imageUrl={productImageUrl(product.imageKey)}
           cancelHref={`/orgs/${orgId}/products/${productId}`}
           product={{
             id: product.id,
