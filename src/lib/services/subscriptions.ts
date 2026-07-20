@@ -2,11 +2,13 @@ import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import type { Database, Transaction } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import { subscriptions } from "@/lib/db/schema";
-import { NotFoundError } from "@/lib/domain/errors";
+import { NotFoundError, PermissionError, ValidationError } from "@/lib/domain/errors";
 import { writeAudit } from "@/lib/audit/write";
 import { systemActor, type ActorContext } from "@/lib/audit/context";
+import { authorize } from "@/lib/authz/permissions";
 import type { Plan } from "@/lib/authz/entitlements";
 import { billingPeriodEnd, type BillingInterval } from "@/lib/authz/plan-pricing";
+import { getMembership } from "./organizations";
 
 /**
  * Subscription lifecycle for self-billing (PROJECT_BRIEF.md §3.8). Plan
@@ -23,6 +25,8 @@ export interface SubscriptionView {
   currentPeriodEnd: Date | null;
   providerCustomerId: string | null;
   providerSubscriptionId: string | null;
+  renewalMode: string;
+  cancelAtPeriodEnd: boolean;
 }
 
 export async function getSubscription(
@@ -37,6 +41,8 @@ export async function getSubscription(
       currentPeriodEnd: subscriptions.currentPeriodEnd,
       providerCustomerId: subscriptions.providerCustomerId,
       providerSubscriptionId: subscriptions.providerSubscriptionId,
+      renewalMode: subscriptions.renewalMode,
+      cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
     })
     .from(subscriptions)
     .where(eq(subscriptions.organizationId, organizationId))
@@ -50,6 +56,8 @@ export async function getSubscription(
       currentPeriodEnd: null,
       providerCustomerId: null,
       providerSubscriptionId: null,
+      renewalMode: "manual",
+      cancelAtPeriodEnd: false,
     };
   }
   return { ...row, plan: (row.plan as Plan) ?? "free" };
@@ -60,6 +68,10 @@ export interface ActivateProParams {
   startedAt: Date;
   providerCustomerId?: string | null;
   providerSubscriptionId?: string | null;
+  /** Saved reusable card token (wave 6); null leaves the stored value. */
+  authorizationCode?: string | null;
+  /** "auto" when a reusable card was captured, else "manual" (M-Pesa). */
+  renewalMode?: "auto" | "manual";
 }
 
 /**
@@ -97,6 +109,12 @@ export async function activateProSubscription(
         params.providerCustomerId ?? current.providerCustomerId,
       providerSubscriptionId:
         params.providerSubscriptionId ?? current.providerSubscriptionId,
+      authorizationCode:
+        params.authorizationCode ?? current.authorizationCode,
+      renewalMode: params.renewalMode ?? current.renewalMode,
+      billingInterval: params.interval,
+      // any successful paid charge clears an outstanding dunning window
+      graceUntil: null,
       version: sql`${subscriptions.version} + 1`,
       updatedAt: new Date(),
     })
@@ -127,7 +145,7 @@ export async function activateProSubscription(
 export async function expireLapsedSubscriptions(
   db: Database,
   now: Date,
-): Promise<{ downgraded: number }> {
+): Promise<{ downgraded: number; endedOrganizationIds: string[] }> {
   const candidates = await db
     .select({ organizationId: subscriptions.organizationId })
     .from(subscriptions)
@@ -140,8 +158,10 @@ export async function expireLapsedSubscriptions(
     );
 
   let downgraded = 0;
+  const endedOrganizationIds: string[] = [];
   for (const { organizationId } of candidates) {
     const ctx = systemActor(organizationId);
+    let ended = false;
     await withOrgTransaction(db, organizationId, async (tx) => {
       const [sub] = await tx
         .select()
@@ -150,6 +170,9 @@ export async function expireLapsedSubscriptions(
         .for("update");
       if (!sub || sub.plan !== "pro") return;
       if (!sub.currentPeriodEnd || sub.currentPeriodEnd >= now) return;
+      // dunning (wave 6): a failed auto-renewal keeps the org on Pro until its
+      // grace window ends, so the renewal cron can keep retrying the card
+      if (sub.graceUntil && sub.graceUntil >= now) return;
 
       await tx
         .update(subscriptions)
@@ -170,7 +193,53 @@ export async function expireLapsedSubscriptions(
         },
       });
       downgraded++;
+      ended = true;
     });
+    if (ended) endedOrganizationIds.push(organizationId);
   }
-  return { downgraded };
+  return { downgraded, endedOrganizationIds };
+}
+
+/**
+ * Schedule a cancellation (wave 6): the org keeps Pro until the end of the
+ * paid period, then lapses — the renewal cron skips `cancel_at_period_end`
+ * subscriptions, and `expireLapsedSubscriptions` downgrades it at period end.
+ * No proration, no immediate loss of access. Owner-only (billing.manage).
+ */
+export async function cancelSubscription(
+  db: Database,
+  ctx: ActorContext,
+): Promise<void> {
+  if (!ctx.actorId) throw new PermissionError("billing.manage");
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "billing.manage");
+    const [sub] = await tx
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.organizationId, ctx.organizationId))
+      .for("update");
+    if (!sub || sub.plan !== "pro") {
+      throw new ValidationError("No active Pro subscription to cancel");
+    }
+    if (sub.cancelAtPeriodEnd) return; // idempotent
+
+    await tx
+      .update(subscriptions)
+      .set({
+        cancelAtPeriodEnd: true,
+        version: sql`${subscriptions.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.organizationId, ctx.organizationId));
+    await writeAudit(tx, ctx, {
+      action: "subscription.cancel_scheduled",
+      entityType: "subscription",
+      entityId: ctx.organizationId,
+      changes: {
+        before: { cancelAtPeriodEnd: false },
+        after: { cancelAtPeriodEnd: true },
+      },
+    });
+  });
 }
