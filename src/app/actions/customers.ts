@@ -131,16 +131,27 @@ export async function createCustomerInlineAction(
   const session = await requireSession();
   const ctx = await userActor(session.user.id, organizationId);
   try {
+    let contactRows: unknown;
+    try {
+      contactRows = parseContacts(formData);
+    } catch {
+      return { error: "Invalid contact persons payload" };
+    }
     const fields = customerFields(formData);
     const { customerId } = await runWithActor(ctx, () =>
-      createCustomer(getDb(), ctx, fields),
+      createCustomer(getDb(), ctx, fields, contactRows as never),
     );
+    await attachLogo(ctx, customerId, formData);
+    const termsRaw = fields.paymentTermsDays;
+    const paymentTermsDays = termsRaw ? Number(termsRaw) : null;
     return {
       customer: {
         id: customerId,
         name: fields.name.trim(),
-        // terms aren't part of the quick form; the org default applies
-        paymentTermsDays: null,
+        // the full inline form can set terms; fall back to the org default
+        paymentTermsDays: Number.isFinite(paymentTermsDays)
+          ? paymentTermsDays
+          : null,
       },
     };
   } catch (error) {

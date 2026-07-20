@@ -115,6 +115,7 @@ export async function createProductInlineAction(
     const { productId } = await runWithActor(ctx, () =>
       createProduct(getDb(), ctx, fields),
     );
+    await attachImage(ctx, productId, formData);
     return {
       product: {
         id: productId,
