@@ -5,6 +5,7 @@ import {
   getReturnDestination,
   verifyAndProcessCharge,
 } from "@/lib/services/checkout";
+import { notifySettlement } from "@/lib/email/settlement";
 
 /**
  * Checkout-return handler: where the provider redirects the payer's browser
@@ -25,10 +26,15 @@ export async function GET(request: Request) {
   if (provider) {
     // best-effort: if verification hiccups, the webhook remains the backstop —
     // we still send the payer to their page, which reads live state
-    await verifyAndProcessCharge(getDb(), provider, reference, {
+    const result = await verifyAndProcessCharge(getDb(), provider, reference, {
       ip: request.headers.get("x-forwarded-for") ?? undefined,
       userAgent: request.headers.get("user-agent") ?? undefined,
-    }).catch(() => {});
+    }).catch(() => null);
+    if (result?.reference) {
+      await notifySettlement(getDb(), result.reference, result.reason).catch(
+        () => {},
+      );
+    }
   }
 
   const dest = await getReturnDestination(getDb(), reference);

@@ -280,7 +280,7 @@ describe("live payments + self-billing (slice 8)", () => {
       chargePayload(reference, { id: "TXN-100", amount: 100000 }),
       "valid",
     );
-    expect(result).toEqual({ ok: true, reason: "invoice_paid" });
+    expect(result).toMatchObject({ ok: true, reason: "invoice_paid" });
 
     const invoice = await getInvoice(db, fx.orgA, invoiceId);
     expect(invoice!.status).toBe("paid");
@@ -533,7 +533,7 @@ describe("live payments + self-billing (slice 8)", () => {
     // the payer returns from checkout; the webhook has not arrived
     provider.seed(reference, { id: "TXN-CB1", amount: 100000 });
     const result = await verifyAndProcessCharge(db, provider, reference);
-    expect(result).toEqual({ ok: true, reason: "invoice_paid" });
+    expect(result).toMatchObject({ ok: true, reason: "invoice_paid" });
 
     const invoice = await getInvoice(db, fx.orgA, invoiceId);
     expect(invoice!.status).toBe("paid");
@@ -599,7 +599,7 @@ describe("live payments + self-billing (slice 8)", () => {
       email: "payer@example.test",
       baseUrl: BASE_URL,
     });
-    expect(await getReturnDestination(db, invRef)).toBe(`/i/${token}`);
+    expect(await getReturnDestination(db, invRef)).toBe(`/i/${token}?paid=1`);
 
     const { reference: subRef } = await initiateSubscriptionCharge(
       db,

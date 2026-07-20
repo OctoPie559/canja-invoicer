@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { getDb } from "@/lib/db/client";
 import { can } from "@/lib/authz/permissions";
+import { PLAN_ENTITLEMENTS } from "@/lib/authz/entitlements";
 import { describeFrequency } from "@/lib/domain/recurring-schedule";
 import { listRecurring } from "@/lib/services/recurring";
+import { getSubscription } from "@/lib/services/subscriptions";
 import { requireMembership } from "@/lib/transport/org";
 import { DocumentStatusBadge } from "@/components/document-status-badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,14 @@ export default async function RecurringPage({
 }) {
   const { orgId } = await params;
   const { role } = await requireMembership(orgId);
-  const schedules = await listRecurring(getDb(), orgId);
+  const db = getDb();
+  const [schedules, subscription] = await Promise.all([
+    listRecurring(db, orgId),
+    getSubscription(db, orgId),
+  ]);
+  // issue 3: recurring is Pro — show the offering up front, not after a
+  // rejected save
+  const recurringEntitled = PLAN_ENTITLEMENTS[subscription.plan].recurringInvoices;
 
   return (
     <div className="space-y-6">
@@ -40,11 +50,19 @@ export default async function RecurringPage({
             Bill retainers and subscriptions on autopilot.
           </p>
         </div>
-        {can(role, "recurring.manage") && (
-          <Button asChild>
-            <Link href={`/orgs/${orgId}/recurring/new`}>New schedule</Link>
-          </Button>
-        )}
+        {can(role, "recurring.manage") &&
+          (recurringEntitled ? (
+            <Button asChild>
+              <Link href={`/orgs/${orgId}/recurring/new`}>New schedule</Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline">
+              <Link href={`/orgs/${orgId}/settings/billing`}>
+                <Sparkles className="text-amber-500" />
+                Upgrade to Pro
+              </Link>
+            </Button>
+          ))}
       </div>
 
       <Card className="py-0">

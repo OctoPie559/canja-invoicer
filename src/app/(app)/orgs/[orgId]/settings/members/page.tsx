@@ -1,7 +1,11 @@
+import Link from "next/link";
 import { and, eq } from "drizzle-orm";
+import { Sparkles } from "lucide-react";
 import { getDb } from "@/lib/db/client";
 import { invitation, member, user } from "@/lib/db/schema";
 import { can } from "@/lib/authz/permissions";
+import { PLAN_ENTITLEMENTS } from "@/lib/authz/entitlements";
+import { getSubscription } from "@/lib/services/subscriptions";
 import { requireMembership } from "@/lib/transport/org";
 import {
   leaveOrganizationAction,
@@ -37,7 +41,7 @@ export default async function MembersSettingsPage({
   const currentUserId = session.user.id;
   const db = getDb();
 
-  const [members, pendingInvitations] = await Promise.all([
+  const [members, pendingInvitations, subscription] = await Promise.all([
     db
       .select({
         id: member.id,
@@ -62,6 +66,7 @@ export default async function MembersSettingsPage({
           eq(invitation.status, "pending"),
         ),
       ),
+    getSubscription(db, orgId),
   ]);
 
   const canRemove = can(role, "member.remove");
@@ -69,6 +74,12 @@ export default async function MembersSettingsPage({
   const soleOwner =
     ownerCount <= 1 &&
     members.some((m) => m.userId === currentUserId && m.role === "owner");
+
+  // seat cap (issue 3): show the wall UP FRONT rather than after a failed
+  // invite. Free = 1 seat, so team invites read as a Pro offering.
+  const seatCap = PLAN_ENTITLEMENTS[subscription.plan].seatCap;
+  const usedSeats = members.length + pendingInvitations.length;
+  const atSeatLimit = usedSeats >= seatCap;
 
   return (
     <Card>
@@ -179,7 +190,32 @@ export default async function MembersSettingsPage({
         )}
         {can(role, "member.invite") && (
           <div className="mt-6 border-t pt-4">
-            <InviteMemberForm organizationId={orgId} />
+            {atSeatLimit ? (
+              <div className="flex flex-col items-start gap-3 rounded-md border border-dashed bg-muted/40 p-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-4 text-amber-500" />
+                  <p className="text-sm font-medium">
+                    {subscription.plan === "free"
+                      ? "Team members are a Pro feature"
+                      : `You've used all ${seatCap} seats on your plan`}
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {subscription.plan === "free"
+                    ? "The Free plan includes one seat. Upgrade to Pro to invite teammates and assign roles."
+                    : "Remove a member or contact us to add more seats."}
+                </p>
+                {subscription.plan === "free" && (
+                  <Button asChild size="sm">
+                    <Link href={`/orgs/${orgId}/settings/billing`}>
+                      Upgrade to Pro
+                    </Link>
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <InviteMemberForm organizationId={orgId} />
+            )}
           </div>
         )}
       </CardContent>
