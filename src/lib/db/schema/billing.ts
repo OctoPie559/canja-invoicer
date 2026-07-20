@@ -33,6 +33,8 @@ export const subscriptions = pgTable("subscriptions", {
   // Wave 6 (recurring billing). Card subscriptions auto-renew via the
   // provider; M-Pesa can't (one-time authorizations) so it stays "manual".
   renewalMode: text("renewal_mode").notNull().default("manual"), // auto | manual
+  // which interval to bill on renewal (monthly | annual); null until first pay
+  billingInterval: text("billing_interval"),
   // saved card token for auto-renew (card only; never an M-Pesa authorization)
   authorizationCode: text("authorization_code"),
   // provider token required to disable/cancel the subscription

@@ -24,6 +24,7 @@ import {
   initiateSubscriptionCharge,
   processProviderEvent,
   reconcilePendingIntents,
+  renewDueSubscriptions,
   verifyAndProcessCharge,
 } from "@/lib/services/checkout";
 import {
@@ -54,6 +55,8 @@ interface SeededTxn {
 }
 type FakeProvider = PaymentProvider & {
   seed(reference: string, txn: SeededTxn): void;
+  /** Control what the next chargeAuthorization returns (wave 6 renewals). */
+  authOutcome: "success" | "failed" | "apierror";
 };
 
 /** Fake provider: signature "valid" passes; anything else is rejected. */
@@ -61,8 +64,33 @@ function fakeProvider(): FakeProvider {
   const txns = new Map<string, SeededTxn>();
   return {
     name: "fake",
+    authOutcome: "success",
     seed(reference, txn) {
       txns.set(reference, txn);
+    },
+    async chargeAuthorization(p) {
+      if (this.authOutcome === "apierror") return null;
+      const status = this.authOutcome === "failed" ? "failed" : "success";
+      const eventType =
+        status === "success" ? "charge.success" : "charge.failed";
+      const id = `auth_${p.reference}`;
+      return {
+        providerEventId: `${eventType}:${id}`,
+        eventType,
+        status,
+        method: "card",
+        reference: p.reference,
+        providerTransactionId: id,
+        amountMinor: p.amountMinor,
+        currency: p.currency,
+        authorization: {
+          authorizationCode: p.authorizationCode,
+          reusable: true,
+          channel: "card",
+        },
+        customerCode: "cust_fake",
+        raw: {},
+      };
     },
     async initiateCharge(p) {
       return {
@@ -687,5 +715,100 @@ describe("live payments + self-billing (slice 8)", () => {
         .where(eq(paymentIntents.reference, reference)),
     );
     expect(visibleFromB).toHaveLength(0);
+  });
+});
+
+describe("recurring renewals (wave 6, self-managed)", () => {
+  let db: Database;
+  let fx: TwoOrgFixture;
+  const provider = fakeProvider();
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = new Date("2026-08-01T09:00:00Z");
+  const yesterday = new Date(now.getTime() - DAY);
+
+  beforeAll(async () => {
+    ({ db } = await createTestDb());
+    fx = await createTwoOrgFixture(db);
+  });
+
+  /** Put org A's subscription into an arbitrary state for the cron to act on. */
+  async function setSub(fields: Record<string, unknown>) {
+    await db
+      .update(subscriptions)
+      .set(fields)
+      .where(eq(subscriptions.organizationId, fx.orgA));
+  }
+
+  const autoDueState = {
+    plan: "pro" as const,
+    status: "active",
+    renewalMode: "auto",
+    billingInterval: "monthly",
+    authorizationCode: "AUTH_test",
+    cancelAtPeriodEnd: false,
+    currentPeriodStart: new Date(now.getTime() - 30 * DAY),
+    currentPeriodEnd: yesterday, // due
+    graceUntil: null,
+  };
+
+  it("charges the saved card and extends the period", async () => {
+    await setSub(autoDueState);
+    provider.authOutcome = "success";
+
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res).toMatchObject({ attempted: 1, renewed: 1, failed: 0 });
+
+    const sub = await getSubscription(db, fx.orgA);
+    expect(sub.plan).toBe("pro");
+    expect(sub.currentPeriodEnd!.getTime()).toBeGreaterThan(now.getTime());
+    expect(sub.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it("a declined card opens a grace window and keeps Pro; downgrades only after grace", async () => {
+    await setSub({ ...autoDueState, graceUntil: null });
+    provider.authOutcome = "failed";
+
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res).toMatchObject({ attempted: 1, renewed: 0, failed: 1 });
+
+    let sub = await getSubscription(db, fx.orgA);
+    expect(sub.plan).toBe("pro"); // still Pro during grace
+    expect(sub.status).toBe("past_due");
+
+    // within grace: expiry cron must NOT downgrade
+    await expireLapsedSubscriptions(db, now);
+    sub = await getSubscription(db, fx.orgA);
+    expect(sub.plan).toBe("pro");
+
+    // after grace: expiry cron downgrades
+    await expireLapsedSubscriptions(db, new Date(now.getTime() + 5 * DAY));
+    sub = await getSubscription(db, fx.orgA);
+    expect(sub.plan).toBe("free");
+    expect(sub.status).toBe("expired");
+  });
+
+  it("skips a subscription scheduled to cancel", async () => {
+    await setSub({ ...autoDueState, cancelAtPeriodEnd: true });
+    provider.authOutcome = "success";
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res.attempted).toBe(0);
+  });
+
+  it("does not charge a manual (M-Pesa) subscription", async () => {
+    await setSub({ ...autoDueState, renewalMode: "manual" });
+    provider.authOutcome = "success";
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res.attempted).toBe(0);
+  });
+
+  it("a provider API error also enters grace (retryable), never downgrades immediately", async () => {
+    await setSub({ ...autoDueState, graceUntil: null });
+    provider.authOutcome = "apierror";
+    const res = await renewDueSubscriptions(db, provider, now);
+    expect(res).toMatchObject({ attempted: 1, failed: 1 });
+    const sub = await getSubscription(db, fx.orgA);
+    expect(sub.plan).toBe("pro");
+    expect(sub.status).toBe("past_due");
   });
 });

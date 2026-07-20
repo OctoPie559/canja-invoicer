@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type {
+  ChargeAuthorizationParams,
   ChargeSession,
   InitiateChargeParams,
   PaymentProvider,
@@ -24,6 +25,25 @@ interface PaystackData {
   currency?: string;
   status?: string;
   channel?: string;
+  authorization?: {
+    authorization_code?: string;
+    reusable?: boolean;
+    channel?: string;
+  };
+  customer?: { customer_code?: string; email?: string };
+}
+
+/** The saved reusable card token, when the charge returned one (card only). */
+function extractAuthorization(
+  data: PaystackData,
+): ProviderEvent["authorization"] {
+  const a = data.authorization;
+  if (!a?.authorization_code) return undefined;
+  return {
+    authorizationCode: a.authorization_code,
+    reusable: Boolean(a.reusable),
+    channel: a.channel,
+  };
 }
 
 function normalizeStatus(event: string, data: PaystackData): ProviderEventStatus {
@@ -119,6 +139,8 @@ export function createPaystackProvider(secretKey: string): PaymentProvider {
         providerTransactionId: String(data.id),
         amountMinor: BigInt(data.amount),
         currency: data.currency ?? "",
+        authorization: extractAuthorization(data),
+        customerCode: data.customer?.customer_code,
         raw: body,
       };
     },
@@ -154,6 +176,59 @@ export function createPaystackProvider(secretKey: string): PaymentProvider {
         providerTransactionId: String(data.id),
         amountMinor: BigInt(data.amount),
         currency: data.currency ?? "",
+        authorization: extractAuthorization(data),
+        customerCode: data.customer?.customer_code,
+        raw: json,
+      };
+    },
+
+    async chargeAuthorization(
+      params: ChargeAuthorizationParams,
+    ): Promise<ProviderEvent | null> {
+      const res = await fetch(`${API_BASE}/transaction/charge_authorization`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          authorization_code: params.authorizationCode,
+          email: params.email,
+          amount: Number(params.amountMinor),
+          currency: params.currency,
+          reference: params.reference,
+          metadata: params.metadata,
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        status?: boolean;
+        data?: PaystackData;
+      } | null;
+      // a transport/API failure (not a card decline) → null; the cron retries
+      if (!res.ok || !json?.status || !json.data || json.data.id == null) {
+        return null;
+      }
+      const data = json.data;
+      // a card decline comes back status:true with data.status = "failed";
+      // that IS a settled event we record (drives dunning), not a null
+      const status = normalizeStatus("", data);
+      const eventType =
+        status === "success"
+          ? "charge.success"
+          : status === "failed"
+            ? "charge.failed"
+            : "charge.pending";
+      return {
+        providerEventId: `${eventType}:${data.id}`,
+        eventType,
+        status,
+        method: normalizeMethod(data.channel),
+        reference: data.reference ?? params.reference,
+        providerTransactionId: String(data.id),
+        amountMinor: BigInt(data.amount ?? Number(params.amountMinor)),
+        currency: data.currency ?? params.currency,
+        authorization: extractAuthorization(data),
+        customerCode: data.customer?.customer_code,
         raw: json,
       };
     },

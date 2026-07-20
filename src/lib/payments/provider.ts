@@ -48,8 +48,30 @@ export interface ProviderEvent {
   providerTransactionId: string;
   amountMinor: bigint;
   currency: string;
+  /**
+   * Saved-card token on a successful CARD charge (wave 6, recurring). Present
+   * only when the provider returns a reusable authorization — mobile money is
+   * one-time and never sets this. Lets us re-charge for auto-renewal.
+   */
+  authorization?: {
+    authorizationCode: string;
+    reusable: boolean;
+    channel?: string;
+  };
+  /** The provider's own customer handle, stored for reference. */
+  customerCode?: string;
   /** The full, verified payload for the payment_events audit row. */
   raw: unknown;
+}
+
+/** Re-charge a saved reusable authorization (wave 6 auto-renewal). */
+export interface ChargeAuthorizationParams {
+  reference: string;
+  authorizationCode: string;
+  email: string;
+  amountMinor: bigint;
+  currency: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PaymentProvider {
@@ -69,6 +91,15 @@ export interface PaymentProvider {
    * provider answering with our secret, not from a signature.
    */
   fetchTransaction(reference: string): Promise<ProviderEvent | null>;
+  /**
+   * Charge a previously-saved reusable authorization (wave 6 auto-renewal).
+   * Returns the settled event (success/failed) to run through the SAME
+   * idempotent settlement as any charge, or null on an API/transport failure
+   * (the renewal cron then leaves the org in grace and retries next run).
+   */
+  chargeAuthorization(
+    params: ChargeAuthorizationParams,
+  ): Promise<ProviderEvent | null>;
 }
 
 /**

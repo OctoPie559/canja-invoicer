@@ -1,11 +1,13 @@
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
   invoices,
+  member,
   paymentEvents,
   paymentIntents,
   payments,
+  subscriptions,
   user,
 } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
@@ -404,10 +406,17 @@ async function processEvent(
         return "invoice_paid";
       }
 
-      // subscription
+      // subscription — capture a reusable card token for auto-renewal; a
+      // one-time (M-Pesa) authorization leaves the org in manual-renew mode
+      const reusableCard = Boolean(event.authorization?.reusable);
       await activateProSubscription(tx, ctx, {
         interval: (intent.billingInterval as BillingInterval) ?? "monthly",
         startedAt: new Date(),
+        authorizationCode: reusableCard
+          ? event.authorization!.authorizationCode
+          : null,
+        renewalMode: reusableCard ? "auto" : "manual",
+        providerCustomerId: event.customerCode ?? null,
       });
       await tx
         .update(paymentIntents)
@@ -441,6 +450,160 @@ async function processEvent(
   });
 
   return { ok: true, reason, reference: event.reference };
+}
+
+// --- Recurring renewals (wave 6, self-managed) -----------------------------
+
+/** Attempt a card renewal up to this long before the period ends. */
+const RENEW_LEAD_MS = 24 * 60 * 60 * 1000;
+/** Keep a failed auto-renewal on Pro this long while we retry (dunning). */
+const DUNNING_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** An owner's email for the org — the payer of record for a renewal charge. */
+async function ownerEmail(
+  db: Database,
+  organizationId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ email: user.email })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(
+      and(eq(member.organizationId, organizationId), eq(member.role, "owner")),
+    )
+    .limit(1);
+  return row?.email ?? null;
+}
+
+/** Open (or keep) the dunning grace window after a failed renewal. */
+async function enterDunningGrace(
+  db: Database,
+  ctx: ActorContext,
+  organizationId: string,
+  now: Date,
+): Promise<void> {
+  await withOrgTransaction(db, organizationId, async (tx) => {
+    const [sub] = await tx
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.organizationId, organizationId))
+      .for("update");
+    if (!sub || sub.plan !== "pro") return;
+    if (sub.graceUntil) return; // grace already running — don't extend it
+    const base =
+      sub.currentPeriodEnd && sub.currentPeriodEnd > now
+        ? sub.currentPeriodEnd
+        : now;
+    const graceUntil = new Date(base.getTime() + DUNNING_GRACE_MS);
+    await tx
+      .update(subscriptions)
+      .set({
+        status: "past_due",
+        graceUntil,
+        version: sql`${subscriptions.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.organizationId, organizationId));
+    await writeAudit(tx, ctx, {
+      action: "subscription.renewal_failed",
+      entityType: "subscription",
+      entityId: organizationId,
+      changes: { after: { graceUntil: graceUntil.toISOString() } },
+    });
+  });
+}
+
+/**
+ * Renew due card subscriptions (cron, actor SYSTEM). For each auto-renew org
+ * approaching expiry we re-charge the saved authorization through the SAME
+ * idempotent settlement path as any charge (our reference → `processEvent` →
+ * `activateProSubscription` extends the period). A decline (or API error) opens
+ * a dunning grace window and the org keeps Pro; the daily run retries until it
+ * succeeds or `expireLapsedSubscriptions` downgrades it once grace ends.
+ * M-Pesa (renewal_mode = manual) is not charged here — it can't be — and is
+ * handled by the reminder path.
+ */
+export async function renewDueSubscriptions(
+  db: Database,
+  provider: PaymentProvider,
+  now: Date,
+  meta?: RequestMeta,
+): Promise<{ attempted: number; renewed: number; failed: number }> {
+  const dueBefore = new Date(now.getTime() + RENEW_LEAD_MS);
+  const due = await db
+    .select({
+      organizationId: subscriptions.organizationId,
+      authorizationCode: subscriptions.authorizationCode,
+      billingInterval: subscriptions.billingInterval,
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.plan, "pro"),
+        eq(subscriptions.renewalMode, "auto"),
+        eq(subscriptions.cancelAtPeriodEnd, false),
+        isNull(subscriptions.deletedAt),
+        isNotNull(subscriptions.authorizationCode),
+        lt(subscriptions.currentPeriodEnd, dueBefore),
+      ),
+    );
+
+  let attempted = 0;
+  let renewed = 0;
+  let failed = 0;
+  for (const row of due) {
+    if (!row.authorizationCode) continue;
+    const organizationId = row.organizationId;
+    const ctx: ActorContext = { ...systemActor(organizationId), ...meta };
+    const interval = (row.billingInterval as BillingInterval) ?? "monthly";
+    const price = proPrice(interval);
+
+    const email = await ownerEmail(db, organizationId);
+    if (!email) continue; // no payer email — leave for a later run
+
+    const reference = newChargeReference();
+    await withOrgTransaction(db, organizationId, async (tx) => {
+      await tx.insert(paymentIntents).values({
+        id: newId(),
+        organizationId,
+        purpose: "subscription",
+        billingInterval: interval,
+        reference,
+        provider: provider.name,
+        amountMinor: price.amountMinor,
+        currency: BILLING_CURRENCY,
+        status: "pending",
+        initiatedBy: null, // system-initiated renewal
+        expiresAt: new Date(now.getTime() + INTENT_TTL_MS),
+      });
+    });
+
+    attempted++;
+    const event = await provider.chargeAuthorization({
+      reference,
+      authorizationCode: row.authorizationCode,
+      email,
+      amountMinor: price.amountMinor,
+      currency: BILLING_CURRENCY,
+      metadata: { purpose: "subscription", organizationId, interval, renewal: true },
+    });
+
+    if (!event) {
+      // API/transport error (not a decline) — dunning, retry next run
+      await enterDunningGrace(db, ctx, organizationId, now);
+      failed++;
+      continue;
+    }
+
+    const result = await processEvent(db, provider, event, meta);
+    if (result.reason === "subscription_activated") {
+      renewed++;
+    } else {
+      await enterDunningGrace(db, ctx, organizationId, now);
+      failed++;
+    }
+  }
+  return { attempted, renewed, failed };
 }
 
 /**

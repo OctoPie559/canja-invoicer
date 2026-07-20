@@ -162,6 +162,13 @@
       "when": 1784556060406,
       "tag": "0022_flimsy_ultimates",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784569685085,
+      "tag": "0023_known_excalibur",
+      "breakpoints": true
     }
   ]
 }
