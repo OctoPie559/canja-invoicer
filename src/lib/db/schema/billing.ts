@@ -37,8 +37,6 @@ export const subscriptions = pgTable("subscriptions", {
   billingInterval: text("billing_interval"),
   // saved card token for auto-renew (card only; never an M-Pesa authorization)
   authorizationCode: text("authorization_code"),
-  // provider token required to disable/cancel the subscription
-  subscriptionEmailToken: text("subscription_email_token"),
   // the user asked to stop; still Pro until currentPeriodEnd
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   // dunning window after a failed renewal — Pro is retained until this passes

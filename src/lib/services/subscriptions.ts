@@ -145,7 +145,7 @@ export async function activateProSubscription(
 export async function expireLapsedSubscriptions(
   db: Database,
   now: Date,
-): Promise<{ downgraded: number }> {
+): Promise<{ downgraded: number; endedOrganizationIds: string[] }> {
   const candidates = await db
     .select({ organizationId: subscriptions.organizationId })
     .from(subscriptions)
@@ -158,8 +158,10 @@ export async function expireLapsedSubscriptions(
     );
 
   let downgraded = 0;
+  const endedOrganizationIds: string[] = [];
   for (const { organizationId } of candidates) {
     const ctx = systemActor(organizationId);
+    let ended = false;
     await withOrgTransaction(db, organizationId, async (tx) => {
       const [sub] = await tx
         .select()
@@ -191,9 +193,11 @@ export async function expireLapsedSubscriptions(
         },
       });
       downgraded++;
+      ended = true;
     });
+    if (ended) endedOrganizationIds.push(organizationId);
   }
-  return { downgraded };
+  return { downgraded, endedOrganizationIds };
 }
 
 /**

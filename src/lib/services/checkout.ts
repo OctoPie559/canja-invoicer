@@ -461,7 +461,7 @@ const RENEW_LEAD_MS = 24 * 60 * 60 * 1000;
 const DUNNING_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** An owner's email for the org — the payer of record for a renewal charge. */
-async function ownerEmail(
+export async function ownerEmail(
   db: Database,
   organizationId: string,
 ): Promise<string | null> {
@@ -531,6 +531,9 @@ export interface RenewalResult {
   outcome: "renewed" | "dunning";
   /** when set on a dunning outcome, the grace window end (for the notice) */
   retryUntil?: Date;
+  /** renewed: what was charged, and when the next renewal falls */
+  amountLabel?: string;
+  nextRenewalOn?: string;
 }
 
 export async function renewDueSubscriptions(
@@ -615,7 +618,20 @@ export async function renewDueSubscriptions(
     const result = await processEvent(db, provider, event, meta);
     if (result.reason === "subscription_activated") {
       renewed++;
-      results.push({ organizationId, email, outcome: "renewed" });
+      const [after] = await db
+        .select({ currentPeriodEnd: subscriptions.currentPeriodEnd })
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, organizationId))
+        .limit(1);
+      results.push({
+        organizationId,
+        email,
+        outcome: "renewed",
+        amountLabel: price.toString(),
+        nextRenewalOn: after?.currentPeriodEnd
+          ? after.currentPeriodEnd.toISOString().slice(0, 10)
+          : undefined,
+      });
     } else {
       const retryUntil = await enterDunningGrace(db, ctx, organizationId, now);
       failed++;

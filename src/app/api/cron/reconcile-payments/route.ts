@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db/client";
 import { getPaymentProvider } from "@/lib/payments";
 import { proPrice } from "@/lib/authz/plan-pricing";
 import {
+  ownerEmail,
   reconcilePendingIntents,
   remindDueManualSubscriptions,
   renewDueSubscriptions,
@@ -11,7 +12,9 @@ import {
 import { expireLapsedSubscriptions } from "@/lib/services/subscriptions";
 import {
   sendDunningNotice,
+  sendRenewalReceipt,
   sendRenewalReminder,
+  sendSubscriptionEnded,
 } from "@/lib/email/subscription-notify";
 
 /**
@@ -47,6 +50,12 @@ export async function GET(request: Request) {
           organizationId: r.organizationId,
           retryUntil: (r.retryUntil ?? now).toISOString().slice(0, 10),
         });
+      } else {
+        await sendRenewalReceipt(r.email, {
+          organizationId: r.organizationId,
+          amountLabel: r.amountLabel ?? "",
+          nextRenewalOn: r.nextRenewalOn,
+        });
       }
     }
   }
@@ -63,7 +72,14 @@ export async function GET(request: Request) {
 
   // 3. sweep abandoned intents, then downgrade lapsed plans (grace-aware)
   const { swept } = await reconcilePendingIntents(db, now);
-  const { downgraded } = await expireLapsedSubscriptions(db, now);
+  const { downgraded, endedOrganizationIds } = await expireLapsedSubscriptions(
+    db,
+    now,
+  );
+  for (const organizationId of endedOrganizationIds) {
+    const email = await ownerEmail(db, organizationId);
+    if (email) await sendSubscriptionEnded(email, { organizationId });
+  }
 
   return NextResponse.json({
     ok: true,

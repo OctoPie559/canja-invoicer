@@ -38,6 +38,39 @@ export async function sendRenewalReminder(
   );
 }
 
+/** A card auto-renewal succeeded — a light receipt. */
+export async function sendRenewalReceipt(
+  to: string,
+  data: { organizationId: string; amountLabel: string; nextRenewalOn?: string },
+  deps: NotifyDeps = {},
+): Promise<void> {
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  const next = data.nextRenewalOn
+    ? ` Your next renewal is on ${data.nextRenewalOn}.`
+    : "";
+  await send(
+    to,
+    "Your Canja Pro plan renewed",
+    `Your Canja Pro plan renewed — ${data.amountLabel} was charged to your card.${next}\n\nManage your plan: ${baseUrl}/orgs/${data.organizationId}/settings/billing`,
+    deps,
+  );
+}
+
+/** The plan lapsed (grace elapsed or a period ended) — moved to Free. */
+export async function sendSubscriptionEnded(
+  to: string,
+  data: { organizationId: string },
+  deps: NotifyDeps = {},
+): Promise<void> {
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  await send(
+    to,
+    "Your Canja Pro plan has ended",
+    `Your Canja Pro plan has ended and your workspace is now on the Free plan. Your data is safe — you can re-subscribe any time to unlock Pro again:\n\n${baseUrl}/orgs/${data.organizationId}/settings/billing`,
+    deps,
+  );
+}
+
 /** A card auto-renewal was declined — ask them to update their card. */
 export async function sendDunningNotice(
   to: string,
