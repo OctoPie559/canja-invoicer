@@ -6,6 +6,7 @@ import { getSubscription } from "@/lib/services/subscriptions";
 import { isPaymentsConfigured } from "@/lib/payments";
 import { requireMembership } from "@/lib/transport/org";
 import { UpgradePlan } from "@/components/upgrade-plan";
+import { CancelSubscriptionButton } from "@/components/cancel-subscription-button";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -91,12 +92,28 @@ export default async function BillingSettingsPage({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Renews / expires</dt>
+                <dt className="text-muted-foreground">
+                  {subscription.cancelAtPeriodEnd
+                    ? "Cancels on"
+                    : subscription.renewalMode === "auto"
+                      ? "Renews automatically on"
+                      : "Expires on"}
+                </dt>
                 <dd className="font-medium">
                   {dateFmt.format(subscription.currentPeriodEnd)}
                 </dd>
               </div>
             </dl>
+          )}
+
+          {isPro && subscription.cancelAtPeriodEnd && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+              Your plan is set to cancel and will move to Free on{" "}
+              {subscription.currentPeriodEnd
+                ? dateFmt.format(subscription.currentPeriodEnd)
+                : "the period end"}
+              . You keep every Pro feature until then.
+            </p>
           )}
 
           <ul className="grid gap-2 text-sm sm:grid-cols-2">
@@ -107,8 +124,40 @@ export default async function BillingSettingsPage({
               </li>
             ))}
           </ul>
+
+          {isPro && canManage && !subscription.cancelAtPeriodEnd && (
+            <div className="border-t pt-4">
+              <CancelSubscriptionButton organizationId={orgId} />
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {isPro &&
+        canManage &&
+        paymentsReady &&
+        subscription.renewalMode === "manual" &&
+        !subscription.cancelAtPeriodEnd && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-heading text-base">
+                Renew your plan
+              </CardTitle>
+              <CardDescription>
+                Your plan doesn&apos;t auto-renew (M-Pesa is one-time). Renew
+                before it expires to stay on Pro — we&apos;ll also remind you by
+                email a few days before.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UpgradePlan
+                organizationId={orgId}
+                monthlyLabel={proPrice("monthly").toString()}
+                annualLabel={proPrice("annual").toString()}
+              />
+            </CardContent>
+          </Card>
+        )}
 
       {!isPro && (
         <Card>

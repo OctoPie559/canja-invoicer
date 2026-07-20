@@ -24,6 +24,7 @@ import {
   initiateSubscriptionCharge,
   processProviderEvent,
   reconcilePendingIntents,
+  remindDueManualSubscriptions,
   renewDueSubscriptions,
   verifyAndProcessCharge,
 } from "@/lib/services/checkout";
@@ -810,5 +811,35 @@ describe("recurring renewals (wave 6, self-managed)", () => {
     const sub = await getSubscription(db, fx.orgA);
     expect(sub.plan).toBe("pro");
     expect(sub.status).toBe("past_due");
+  });
+
+  it("reminds a manual (M-Pesa) subscription once per period", async () => {
+    await setSub({
+      ...autoDueState,
+      renewalMode: "manual",
+      authorizationCode: null,
+      currentPeriodStart: new Date(now.getTime() - 27 * DAY),
+      currentPeriodEnd: new Date(now.getTime() + 2 * DAY), // within 3-day lead
+      graceUntil: null,
+    });
+
+    const first = await remindDueManualSubscriptions(db, now);
+    expect(first).toHaveLength(1);
+    expect(first[0].organizationId).toBe(fx.orgA);
+    expect(first[0].email).toBe(fx.alice.email);
+
+    // second run in the same period: already reminded → nothing
+    const second = await remindDueManualSubscriptions(db, now);
+    expect(second).toHaveLength(0);
+  });
+
+  it("does not remind an auto (card) subscription", async () => {
+    await setSub({
+      ...autoDueState,
+      renewalMode: "auto",
+      currentPeriodEnd: new Date(now.getTime() + 2 * DAY),
+    });
+    const res = await remindDueManualSubscriptions(db, now);
+    expect(res).toHaveLength(0);
   });
 });

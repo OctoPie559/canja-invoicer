@@ -1,7 +1,8 @@
-import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
+  auditLog,
   invoices,
   member,
   paymentEvents,
@@ -481,15 +482,15 @@ async function enterDunningGrace(
   ctx: ActorContext,
   organizationId: string,
   now: Date,
-): Promise<void> {
-  await withOrgTransaction(db, organizationId, async (tx) => {
+): Promise<Date | undefined> {
+  return withOrgTransaction(db, organizationId, async (tx) => {
     const [sub] = await tx
       .select()
       .from(subscriptions)
       .where(eq(subscriptions.organizationId, organizationId))
       .for("update");
-    if (!sub || sub.plan !== "pro") return;
-    if (sub.graceUntil) return; // grace already running — don't extend it
+    if (!sub || sub.plan !== "pro") return undefined;
+    if (sub.graceUntil) return sub.graceUntil; // grace already running
     const base =
       sub.currentPeriodEnd && sub.currentPeriodEnd > now
         ? sub.currentPeriodEnd
@@ -510,6 +511,7 @@ async function enterDunningGrace(
       entityId: organizationId,
       changes: { after: { graceUntil: graceUntil.toISOString() } },
     });
+    return graceUntil;
   });
 }
 
@@ -523,12 +525,25 @@ async function enterDunningGrace(
  * M-Pesa (renewal_mode = manual) is not charged here — it can't be — and is
  * handled by the reminder path.
  */
+export interface RenewalResult {
+  organizationId: string;
+  email: string;
+  outcome: "renewed" | "dunning";
+  /** when set on a dunning outcome, the grace window end (for the notice) */
+  retryUntil?: Date;
+}
+
 export async function renewDueSubscriptions(
   db: Database,
   provider: PaymentProvider,
   now: Date,
   meta?: RequestMeta,
-): Promise<{ attempted: number; renewed: number; failed: number }> {
+): Promise<{
+  attempted: number;
+  renewed: number;
+  failed: number;
+  results: RenewalResult[];
+}> {
   const dueBefore = new Date(now.getTime() + RENEW_LEAD_MS);
   const due = await db
     .select({
@@ -551,6 +566,7 @@ export async function renewDueSubscriptions(
   let attempted = 0;
   let renewed = 0;
   let failed = 0;
+  const results: RenewalResult[] = [];
   for (const row of due) {
     if (!row.authorizationCode) continue;
     const organizationId = row.organizationId;
@@ -590,20 +606,106 @@ export async function renewDueSubscriptions(
 
     if (!event) {
       // API/transport error (not a decline) — dunning, retry next run
-      await enterDunningGrace(db, ctx, organizationId, now);
+      const retryUntil = await enterDunningGrace(db, ctx, organizationId, now);
       failed++;
+      results.push({ organizationId, email, outcome: "dunning", retryUntil });
       continue;
     }
 
     const result = await processEvent(db, provider, event, meta);
     if (result.reason === "subscription_activated") {
       renewed++;
+      results.push({ organizationId, email, outcome: "renewed" });
     } else {
-      await enterDunningGrace(db, ctx, organizationId, now);
+      const retryUntil = await enterDunningGrace(db, ctx, organizationId, now);
       failed++;
+      results.push({ organizationId, email, outcome: "dunning", retryUntil });
     }
   }
-  return { attempted, renewed, failed };
+  return { attempted, renewed, failed, results };
+}
+
+/** Send a manual (M-Pesa) renewal reminder at most this long before expiry. */
+const REMINDER_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
+
+export interface ReminderDue {
+  organizationId: string;
+  email: string;
+  expiresOn: string;
+  interval: BillingInterval;
+}
+
+/**
+ * Find manual (M-Pesa) subscriptions approaching expiry that still need a
+ * renewal reminder this period, and MARK them reminded (cron, actor SYSTEM).
+ * The `subscription.renewal_reminder` audit row is the once-per-period dedup —
+ * no extra column. The cron route sends the emails from the returned list.
+ */
+export async function remindDueManualSubscriptions(
+  db: Database,
+  now: Date,
+): Promise<ReminderDue[]> {
+  const soon = new Date(now.getTime() + REMINDER_LEAD_MS);
+  const due = await db
+    .select({
+      organizationId: subscriptions.organizationId,
+      currentPeriodStart: subscriptions.currentPeriodStart,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+      billingInterval: subscriptions.billingInterval,
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.plan, "pro"),
+        eq(subscriptions.renewalMode, "manual"),
+        eq(subscriptions.cancelAtPeriodEnd, false),
+        isNull(subscriptions.deletedAt),
+        isNotNull(subscriptions.currentPeriodEnd),
+        gt(subscriptions.currentPeriodEnd, now), // not yet expired
+        lt(subscriptions.currentPeriodEnd, soon), // within the reminder lead
+      ),
+    );
+
+  const out: ReminderDue[] = [];
+  for (const row of due) {
+    if (!row.currentPeriodEnd) continue;
+    // once per period: skip if a reminder was already logged since the period
+    // started
+    const [already] = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.organizationId, row.organizationId),
+          eq(auditLog.action, "subscription.renewal_reminder"),
+          row.currentPeriodStart
+            ? gte(auditLog.createdAt, row.currentPeriodStart)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    if (already) continue;
+
+    const email = await ownerEmail(db, row.organizationId);
+    if (!email) continue;
+
+    const ctx = systemActor(row.organizationId);
+    await withOrgTransaction(db, row.organizationId, async (tx) => {
+      await writeAudit(tx, ctx, {
+        action: "subscription.renewal_reminder",
+        entityType: "subscription",
+        entityId: row.organizationId,
+        changes: { after: { currentPeriodEnd: row.currentPeriodEnd!.toISOString() } },
+      });
+    });
+    out.push({
+      organizationId: row.organizationId,
+      email,
+      expiresOn: row.currentPeriodEnd.toISOString().slice(0, 10),
+      interval: (row.billingInterval as BillingInterval) ?? "monthly",
+    });
+  }
+  return out;
 }
 
 /**

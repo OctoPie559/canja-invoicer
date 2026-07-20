@@ -1,0 +1,54 @@
+import { appBaseUrl } from "@/lib/config";
+import { getEmailSender, type EmailSender } from "./port";
+
+/**
+ * Subscription lifecycle notices (wave 6), sent best-effort from the billing
+ * cron — plain text, so they need no JSX template and never block the cron.
+ * Kept out of the pure services: the cron route calls these with the data the
+ * services return, exactly like the settlement emails.
+ */
+
+interface NotifyDeps {
+  sender?: EmailSender;
+  baseUrl?: string;
+}
+
+async function send(
+  to: string,
+  subject: string,
+  text: string,
+  deps: NotifyDeps,
+): Promise<void> {
+  const sender = deps.sender ?? getEmailSender();
+  await sender.send({ to, subject, text }).catch(() => {});
+}
+
+/** M-Pesa (manual) renewal reminder — they must re-pay or Pro lapses. */
+export async function sendRenewalReminder(
+  to: string,
+  data: { organizationId: string; expiresOn: string; priceLabel: string },
+  deps: NotifyDeps = {},
+): Promise<void> {
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  await send(
+    to,
+    "Your Canja Pro plan is up for renewal",
+    `Your Canja Pro plan expires on ${data.expiresOn}. To stay on Pro, renew for ${data.priceLabel}:\n\n${baseUrl}/orgs/${data.organizationId}/settings/billing\n\nIf you do nothing, your workspace moves to the Free plan when the period ends.`,
+    deps,
+  );
+}
+
+/** A card auto-renewal was declined — ask them to update their card. */
+export async function sendDunningNotice(
+  to: string,
+  data: { organizationId: string; retryUntil: string },
+  deps: NotifyDeps = {},
+): Promise<void> {
+  const baseUrl = deps.baseUrl ?? appBaseUrl();
+  await send(
+    to,
+    "Action needed: your Canja Pro renewal didn't go through",
+    `We couldn't charge your card for your Canja Pro renewal. You're still on Pro — we'll keep retrying until ${data.retryUntil}. Please check your card or update it here:\n\n${baseUrl}/orgs/${data.organizationId}/settings/billing`,
+    deps,
+  );
+}
