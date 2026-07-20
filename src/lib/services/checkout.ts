@@ -1,11 +1,14 @@
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, gte, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { withOrgTransaction } from "@/lib/db/tx";
 import {
+  auditLog,
   invoices,
+  member,
   paymentEvents,
   paymentIntents,
   payments,
+  subscriptions,
   user,
 } from "@/lib/db/schema";
 import { newId } from "@/lib/domain/ids";
@@ -404,10 +407,23 @@ async function processEvent(
         return "invoice_paid";
       }
 
-      // subscription
+      // subscription — capture a reusable card token for auto-renewal; a
+      // one-time (M-Pesa) authorization is manual. Only change renewal_mode on
+      // a clear signal: a renewal response that lacks any authorization block
+      // (unexpected) must NOT flip an existing auto sub to manual, so we leave
+      // the stored mode untouched (undefined) in that case.
+      const auth = event.authorization;
+      const renewalMode: "auto" | "manual" | undefined = auth?.reusable
+        ? "auto"
+        : auth || event.method === "mpesa"
+          ? "manual"
+          : undefined;
       await activateProSubscription(tx, ctx, {
         interval: (intent.billingInterval as BillingInterval) ?? "monthly",
         startedAt: new Date(),
+        authorizationCode: auth?.reusable ? auth.authorizationCode : undefined,
+        renewalMode,
+        providerCustomerId: event.customerCode ?? null,
       });
       await tx
         .update(paymentIntents)
@@ -443,6 +459,303 @@ async function processEvent(
   return { ok: true, reason, reference: event.reference };
 }
 
+// --- Recurring renewals (wave 6, self-managed) -----------------------------
+
+/** Attempt a card renewal up to this long before the period ends. */
+const RENEW_LEAD_MS = 24 * 60 * 60 * 1000;
+/** Keep a failed auto-renewal on Pro this long while we retry (dunning). */
+const DUNNING_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** An owner's email for the org — the payer of record for a renewal charge. */
+export async function ownerEmail(
+  db: Database,
+  organizationId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ email: user.email })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(
+      and(eq(member.organizationId, organizationId), eq(member.role, "owner")),
+    )
+    .limit(1);
+  return row?.email ?? null;
+}
+
+/** Open (or keep) the dunning grace window after a failed renewal. */
+async function enterDunningGrace(
+  db: Database,
+  ctx: ActorContext,
+  organizationId: string,
+  now: Date,
+): Promise<Date | undefined> {
+  return withOrgTransaction(db, organizationId, async (tx) => {
+    const [sub] = await tx
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.organizationId, organizationId))
+      .for("update");
+    if (!sub || sub.plan !== "pro") return undefined;
+    if (sub.graceUntil) return sub.graceUntil; // grace already running
+    const base =
+      sub.currentPeriodEnd && sub.currentPeriodEnd > now
+        ? sub.currentPeriodEnd
+        : now;
+    const graceUntil = new Date(base.getTime() + DUNNING_GRACE_MS);
+    await tx
+      .update(subscriptions)
+      .set({
+        status: "past_due",
+        graceUntil,
+        version: sql`${subscriptions.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.organizationId, organizationId));
+    await writeAudit(tx, ctx, {
+      action: "subscription.renewal_failed",
+      entityType: "subscription",
+      entityId: organizationId,
+      changes: { after: { graceUntil: graceUntil.toISOString() } },
+    });
+    return graceUntil;
+  });
+}
+
+/**
+ * Renew due card subscriptions (cron, actor SYSTEM). For each auto-renew org
+ * approaching expiry we re-charge the saved authorization through the SAME
+ * idempotent settlement path as any charge (our reference → `processEvent` →
+ * `activateProSubscription` extends the period). A decline (or API error) opens
+ * a dunning grace window and the org keeps Pro; the daily run retries until it
+ * succeeds or `expireLapsedSubscriptions` downgrades it once grace ends.
+ * M-Pesa (renewal_mode = manual) is not charged here — it can't be — and is
+ * handled by the reminder path.
+ */
+export interface RenewalResult {
+  organizationId: string;
+  email: string;
+  outcome: "renewed" | "dunning";
+  /** when set on a dunning outcome, the grace window end (for the notice) */
+  retryUntil?: Date;
+  /** renewed: what was charged, and when the next renewal falls */
+  amountLabel?: string;
+  nextRenewalOn?: string;
+}
+
+export async function renewDueSubscriptions(
+  db: Database,
+  provider: PaymentProvider,
+  now: Date,
+  meta?: RequestMeta,
+): Promise<{
+  attempted: number;
+  renewed: number;
+  failed: number;
+  results: RenewalResult[];
+}> {
+  const dueBefore = new Date(now.getTime() + RENEW_LEAD_MS);
+  const due = await db
+    .select({
+      organizationId: subscriptions.organizationId,
+      authorizationCode: subscriptions.authorizationCode,
+      billingInterval: subscriptions.billingInterval,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.plan, "pro"),
+        eq(subscriptions.renewalMode, "auto"),
+        eq(subscriptions.cancelAtPeriodEnd, false),
+        isNull(subscriptions.deletedAt),
+        isNotNull(subscriptions.authorizationCode),
+        lt(subscriptions.currentPeriodEnd, dueBefore),
+      ),
+    );
+
+  let attempted = 0;
+  let renewed = 0;
+  let failed = 0;
+  const results: RenewalResult[] = [];
+  for (const row of due) {
+    if (!row.authorizationCode) continue;
+    const organizationId = row.organizationId;
+    const ctx: ActorContext = { ...systemActor(organizationId), ...meta };
+    const interval = (row.billingInterval as BillingInterval) ?? "monthly";
+    const price = proPrice(interval);
+
+    const email = await ownerEmail(db, organizationId);
+    if (!email) continue; // no payer email — leave for a later run
+
+    // deterministic per (org, billing period): a retry after a lost response
+    // reuses the SAME reference, so Paystack dedups the charge — a renewal can
+    // never charge the card twice. The unique reference index makes the intent
+    // insert idempotent too.
+    const periodKey = row.currentPeriodEnd
+      ? Math.floor(row.currentPeriodEnd.getTime() / 1000)
+      : 0;
+    const reference = `cnj_rnw_${organizationId}_${periodKey}`;
+    await withOrgTransaction(db, organizationId, async (tx) => {
+      const inserted = await tx
+        .insert(paymentIntents)
+        .values({
+          id: newId(),
+          organizationId,
+          purpose: "subscription",
+          billingInterval: interval,
+          reference,
+          provider: provider.name,
+          amountMinor: price.amountMinor,
+          currency: BILLING_CURRENCY,
+          status: "pending",
+          initiatedBy: null, // system-initiated renewal
+          expiresAt: new Date(now.getTime() + INTENT_TTL_MS),
+        })
+        .onConflictDoNothing({ target: paymentIntents.reference })
+        .returning({ id: paymentIntents.id });
+      if (inserted.length > 0) {
+        await writeAudit(tx, ctx, {
+          action: "subscription.renewal_initiated",
+          entityType: "subscription",
+          entityId: organizationId,
+          changes: {
+            after: {
+              reference,
+              amountMinor: String(price.amountMinor),
+              interval,
+            },
+          },
+        });
+      }
+    });
+
+    attempted++;
+    const event = await provider.chargeAuthorization({
+      reference,
+      authorizationCode: row.authorizationCode,
+      email,
+      amountMinor: price.amountMinor,
+      currency: BILLING_CURRENCY,
+      metadata: { purpose: "subscription", organizationId, interval, renewal: true },
+    });
+
+    if (!event) {
+      // API/transport error (not a decline) — dunning, retry next run
+      const retryUntil = await enterDunningGrace(db, ctx, organizationId, now);
+      failed++;
+      results.push({ organizationId, email, outcome: "dunning", retryUntil });
+      continue;
+    }
+
+    const result = await processEvent(db, provider, event, meta);
+    if (result.reason === "subscription_activated") {
+      renewed++;
+      const [after] = await db
+        .select({ currentPeriodEnd: subscriptions.currentPeriodEnd })
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, organizationId))
+        .limit(1);
+      results.push({
+        organizationId,
+        email,
+        outcome: "renewed",
+        amountLabel: price.toString(),
+        nextRenewalOn: after?.currentPeriodEnd
+          ? after.currentPeriodEnd.toISOString().slice(0, 10)
+          : undefined,
+      });
+    } else {
+      const retryUntil = await enterDunningGrace(db, ctx, organizationId, now);
+      failed++;
+      results.push({ organizationId, email, outcome: "dunning", retryUntil });
+    }
+  }
+  return { attempted, renewed, failed, results };
+}
+
+/** Send a manual (M-Pesa) renewal reminder at most this long before expiry. */
+const REMINDER_LEAD_MS = 3 * 24 * 60 * 60 * 1000;
+
+export interface ReminderDue {
+  organizationId: string;
+  email: string;
+  expiresOn: string;
+  interval: BillingInterval;
+}
+
+/**
+ * Find manual (M-Pesa) subscriptions approaching expiry that still need a
+ * renewal reminder this period, and MARK them reminded (cron, actor SYSTEM).
+ * The `subscription.renewal_reminder` audit row is the once-per-period dedup —
+ * no extra column. The cron route sends the emails from the returned list.
+ */
+export async function remindDueManualSubscriptions(
+  db: Database,
+  now: Date,
+): Promise<ReminderDue[]> {
+  const soon = new Date(now.getTime() + REMINDER_LEAD_MS);
+  const due = await db
+    .select({
+      organizationId: subscriptions.organizationId,
+      currentPeriodStart: subscriptions.currentPeriodStart,
+      currentPeriodEnd: subscriptions.currentPeriodEnd,
+      billingInterval: subscriptions.billingInterval,
+    })
+    .from(subscriptions)
+    .where(
+      and(
+        eq(subscriptions.plan, "pro"),
+        eq(subscriptions.renewalMode, "manual"),
+        eq(subscriptions.cancelAtPeriodEnd, false),
+        isNull(subscriptions.deletedAt),
+        isNotNull(subscriptions.currentPeriodEnd),
+        gt(subscriptions.currentPeriodEnd, now), // not yet expired
+        lt(subscriptions.currentPeriodEnd, soon), // within the reminder lead
+      ),
+    );
+
+  const out: ReminderDue[] = [];
+  for (const row of due) {
+    if (!row.currentPeriodEnd) continue;
+    // once per period: skip if a reminder was already logged since the period
+    // started
+    const [already] = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.organizationId, row.organizationId),
+          eq(auditLog.action, "subscription.renewal_reminder"),
+          row.currentPeriodStart
+            ? gte(auditLog.createdAt, row.currentPeriodStart)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    if (already) continue;
+
+    const email = await ownerEmail(db, row.organizationId);
+    if (!email) continue;
+
+    const ctx = systemActor(row.organizationId);
+    await withOrgTransaction(db, row.organizationId, async (tx) => {
+      await writeAudit(tx, ctx, {
+        action: "subscription.renewal_reminder",
+        entityType: "subscription",
+        entityId: row.organizationId,
+        changes: { after: { currentPeriodEnd: row.currentPeriodEnd!.toISOString() } },
+      });
+    });
+    out.push({
+      organizationId: row.organizationId,
+      email,
+      expiresOn: row.currentPeriodEnd.toISOString().slice(0, 10),
+      interval: (row.billingInterval as BillingInterval) ?? "monthly",
+    });
+  }
+  return out;
+}
+
 /**
  * Reconcile abandoned charges (cron, actor SYSTEM): pending intents past their
  * TTL are swept to `abandoned` so they stop showing as in-flight. A terminal
@@ -464,6 +777,15 @@ export async function reconcilePendingIntents(
         eq(paymentIntents.status, "pending"),
         lt(paymentIntents.expiresAt, now),
         isNull(paymentIntents.deletedAt),
+        // never abandon a SYSTEM renewal intent (subscription + no initiator):
+        // it uses a deterministic reference and is reconciled by the renewal
+        // cron, so abandoning it could let a paid-but-unsettled renewal go
+        // unactivated. Public invoice charges (also initiatedBy NULL) still get
+        // swept — they are `purpose = invoice`.
+        or(
+          ne(paymentIntents.purpose, "subscription"),
+          isNotNull(paymentIntents.initiatedBy),
+        ),
       ),
     );
 
@@ -476,7 +798,12 @@ export async function reconcilePendingIntents(
         .from(paymentIntents)
         .where(eq(paymentIntents.id, row.id))
         .for("update");
-      if (!intent || intent.status !== "pending" || intent.expiresAt >= now) {
+      if (
+        !intent ||
+        intent.status !== "pending" ||
+        intent.expiresAt >= now ||
+        (intent.purpose === "subscription" && intent.initiatedBy === null)
+      ) {
         return;
       }
       await tx

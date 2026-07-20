@@ -25,6 +25,21 @@ export function proPrice(interval: BillingInterval): Money {
 }
 
 /**
+ * Paystack plan code for an interval (wave 6). Created once in the Paystack
+ * dashboard and referenced by env, so passing it in `transaction/initialize`
+ * makes the first card charge auto-create a recurring subscription. Null when
+ * unset — checkout then falls back to a one-off charge (today's behavior), so
+ * recurring is a config-gated upgrade, never a hard dependency.
+ */
+export function proPlanCode(interval: BillingInterval): string | null {
+  const code =
+    interval === "annual"
+      ? process.env.PAYSTACK_PLAN_ANNUAL
+      : process.env.PAYSTACK_PLAN_MONTHLY;
+  return code && code.trim() !== "" ? code : null;
+}
+
+/**
  * The end of a billing period starting at `start`, in UTC. Month arithmetic
  * clamps to the last valid day (Jan 31 + 1 month → Feb 28/29) so a period end
  * never silently rolls into the following month.
