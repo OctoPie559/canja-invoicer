@@ -7,6 +7,8 @@ import { EstimateSendEmail } from "../../../emails/estimate-send";
 import { EstimateResponseEmail } from "../../../emails/estimate-response";
 import { PasswordResetEmail } from "../../../emails/password-reset";
 import { VerificationEmail } from "../../../emails/verification";
+import { SubscriptionConfirmation } from "../../../emails/subscription-confirmation";
+import { PaymentReceiptEmail } from "../../../emails/payment-receipt";
 import type { EmailMessage } from "./port";
 
 /**
@@ -218,3 +220,53 @@ export const invoiceReminderEmail: InvoiceReminderBuilder = async ({
     ...body,
   };
 };
+
+export async function subscriptionUpgradedEmail(params: {
+  userName: string;
+  planPrice: string;
+  cycleLabel: string;
+  nextBillingDate: string;
+  total: string;
+  url: string;
+}): Promise<RenderedEmail> {
+  const body = await renderBoth(
+    <SubscriptionConfirmation
+      userName={params.userName}
+      planName="Pro"
+      planPrice={params.planPrice}
+      cycleLabel={params.cycleLabel}
+      nextBillingDate={params.nextBillingDate}
+      subtotal={params.total}
+      tax="—"
+      total={params.total}
+      url={params.url}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  return { subject: "You're on Canja Pro", ...body };
+}
+
+export async function paymentReceiptEmail(params: {
+  organizationName: string;
+  displayNumber: string;
+  amountPaid: string;
+  balance: string;
+  paidDate: string;
+  url: string;
+}): Promise<RenderedEmail> {
+  const body = await renderBoth(
+    <PaymentReceiptEmail
+      organizationName={params.organizationName}
+      displayNumber={params.displayNumber}
+      amountPaid={params.amountPaid}
+      balance={params.balance}
+      paidDate={params.paidDate}
+      url={params.url}
+      baseUrl={emailAssetBaseUrl()}
+    />,
+  );
+  return {
+    subject: `Payment received — ${params.displayNumber}`,
+    ...body,
+  };
+}

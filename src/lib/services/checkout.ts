@@ -254,6 +254,8 @@ export async function initiateSubscriptionCharge(
 export interface ProcessResult {
   ok: boolean;
   reason: string;
+  /** provider reference, so the transport can fire settlement emails */
+  reference?: string;
 }
 
 /**
@@ -438,7 +440,7 @@ async function processEvent(
     return "ignored";
   });
 
-  return { ok: true, reason };
+  return { ok: true, reason, reference: event.reference };
 }
 
 /**
@@ -525,7 +527,8 @@ export async function getReturnDestination(
       .from(invoices)
       .where(eq(invoices.id, intent.invoiceId))
       .limit(1);
-    if (inv?.token) return `/i/${inv.token}`;
+    // issue 16: land the payer on a clear "payment received" confirmation
+    if (inv?.token) return `/i/${inv.token}?paid=1`;
   }
   return "/";
 }
