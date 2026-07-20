@@ -23,7 +23,10 @@ async function send(
   await sender.send({ to, subject, text }).catch(() => {});
 }
 
-/** M-Pesa (manual) renewal reminder — they must re-pay or Pro lapses. */
+/**
+ * M-Pesa (manual) heads-up: the plan can't auto-renew, so it will lapse to
+ * Free at period end and they re-subscribe from billing once it does.
+ */
 export async function sendRenewalReminder(
   to: string,
   data: { organizationId: string; expiresOn: string; priceLabel: string },
@@ -32,8 +35,8 @@ export async function sendRenewalReminder(
   const baseUrl = deps.baseUrl ?? appBaseUrl();
   await send(
     to,
-    "Your Canja Pro plan is up for renewal",
-    `Your Canja Pro plan expires on ${data.expiresOn}. To stay on Pro, renew for ${data.priceLabel}:\n\n${baseUrl}/orgs/${data.organizationId}/settings/billing\n\nIf you do nothing, your workspace moves to the Free plan when the period ends.`,
+    "Your Canja Pro plan expires soon",
+    `Your Canja Pro plan expires on ${data.expiresOn}. Because you pay by M-Pesa, it doesn't renew automatically — your workspace will move to the Free plan when the period ends. You can re-subscribe (${data.priceLabel}) any time from your billing page to restore Pro:\n\n${baseUrl}/orgs/${data.organizationId}/settings/billing`,
     deps,
   );
 }

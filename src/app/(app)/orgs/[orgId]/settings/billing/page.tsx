@@ -55,22 +55,6 @@ export default async function BillingSettingsPage({
   const canManage = can(role, "billing.manage");
   const paymentsReady = isPaymentsConfigured();
 
-  // A manual (M-Pesa) Pro plan can't auto-renew, so we surface a "Renew now"
-  // card — but only as expiry approaches, never to a comfortably-subscribed
-  // user with weeks left.
-  const RENEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-  const renewalDueSoon = Boolean(
-    subscription.currentPeriodEnd &&
-      subscription.currentPeriodEnd.getTime() - Date.now() < RENEW_WINDOW_MS,
-  );
-  const showManualRenew =
-    isPro &&
-    canManage &&
-    paymentsReady &&
-    subscription.renewalMode === "manual" &&
-    !subscription.cancelAtPeriodEnd &&
-    renewalDueSoon;
-
   return (
     <div className="space-y-4">
       {upgraded === "1" && isPro && (
@@ -149,27 +133,6 @@ export default async function BillingSettingsPage({
         </CardContent>
       </Card>
 
-      {showManualRenew && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="font-heading text-base">
-                Renew your plan
-              </CardTitle>
-              <CardDescription>
-                Your plan doesn&apos;t auto-renew (M-Pesa is one-time). Renew
-                before it expires to stay on Pro — we&apos;ll also remind you by
-                email a few days before.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <UpgradePlan
-                organizationId={orgId}
-                monthlyLabel={proPrice("monthly").toString()}
-                annualLabel={proPrice("annual").toString()}
-              />
-            </CardContent>
-          </Card>
-        )}
 
       {!isPro && (
         <Card>
