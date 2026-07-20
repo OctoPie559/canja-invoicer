@@ -25,6 +25,7 @@ import {
   acceptInvitationSchema,
   createOrganizationSchema,
   inviteMemberSchema,
+  referralSourceSchema,
   type AcceptInvitationInput,
   type CreateOrganizationInput,
   type InviteMemberInput,
@@ -138,6 +139,41 @@ export async function createOrganization(
   });
 
   return { organizationId };
+}
+
+/**
+ * Record the onboarding "how did you hear about us" answer (issue 1). Pure
+ * data collection on organization_settings — gated by settings.update and
+ * audited like any other settings write.
+ */
+export async function recordReferralSource(
+  db: Database,
+  ctx: ActorContext,
+  source: string,
+): Promise<void> {
+  const referralSource = referralSourceSchema.parse(source);
+  if (!ctx.actorId) throw new PermissionError("settings.update");
+
+  await withOrgTransaction(db, ctx.organizationId, async (tx) => {
+    const caller = await getMembership(tx, ctx.organizationId, ctx.actorId!);
+    authorize(caller.role, "settings.update");
+    const [settings] = await tx
+      .select({ id: organizationSettings.id })
+      .from(organizationSettings)
+      .where(eq(organizationSettings.organizationId, ctx.organizationId))
+      .for("update");
+    if (!settings) throw new NotFoundError("Organization settings");
+    await tx
+      .update(organizationSettings)
+      .set({ referralSource, updatedAt: new Date() })
+      .where(eq(organizationSettings.organizationId, ctx.organizationId));
+    await writeAudit(tx, ctx, {
+      action: "organization.referral_recorded",
+      entityType: "organization_settings",
+      entityId: settings.id,
+      changes: { after: { referralSource } },
+    });
+  });
 }
 
 /** Renders the invitation email body; the transport injects the HTML one. */

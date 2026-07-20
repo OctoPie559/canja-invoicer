@@ -141,6 +141,13 @@
       "when": 1784210450442,
       "tag": "0019_ask_canja",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784540082779,
+      "tag": "0020_giant_shockwave",
+      "breakpoints": true
     }
   ]
 }

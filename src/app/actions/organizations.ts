@@ -10,9 +10,11 @@ import {
   createOrganization,
   inviteMember,
   leaveOrganization,
+  recordReferralSource,
   removeMember,
   revokeInvitation,
 } from "@/lib/services/organizations";
+import { uploadBrandingLogo } from "@/lib/services/branding";
 import {
   requestMeta,
   requireSession,
@@ -59,6 +61,73 @@ export async function createOrganizationAction(
     return mapError(error);
   }
   redirect(`/orgs/${organizationId}`);
+}
+
+/**
+ * Onboarding step 1 (issue 1): create the org and, if provided, attach a logo
+ * in one go, then move the new owner into the guided flow. The logo is
+ * best-effort — a storage hiccup must not strand a just-created org; the user
+ * can add it later in branding settings.
+ */
+export async function createOrgOnboardingAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  let organizationId: string;
+  try {
+    const result = await createOrganization(
+      getDb(),
+      {
+        name: String(formData.get("name") ?? ""),
+        type: formData.get("type") === "business" ? "business" : "personal",
+      },
+      { userId: session.user.id, meta: await requestMeta() },
+    );
+    organizationId = result.organizationId;
+  } catch (error) {
+    return mapError(error);
+  }
+
+  const logo = formData.get("logo");
+  if (logo instanceof File && logo.size > 0) {
+    try {
+      const ctx = await userActor(session.user.id, organizationId);
+      const bytes = new Uint8Array(await logo.arrayBuffer());
+      await runWithActor(ctx, () =>
+        uploadBrandingLogo(getDb(), ctx, {
+          bytes,
+          contentType: logo.type,
+        }),
+      );
+    } catch {
+      // best-effort — the org exists; a missing logo is fixable in settings
+    }
+  }
+
+  redirect(`/onboarding/${organizationId}/survey`);
+}
+
+/** Onboarding step "how did you hear about us" (issue 1) — data collection. */
+export async function recordReferralAction(
+  organizationId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () =>
+      recordReferralSource(
+        getDb(),
+        ctx,
+        String(formData.get("referralSource") ?? ""),
+      ),
+    );
+  } catch (error) {
+    return mapError(error);
+  }
+  redirect(`/onboarding/${organizationId}/verify`);
 }
 
 export async function inviteMemberAction(
