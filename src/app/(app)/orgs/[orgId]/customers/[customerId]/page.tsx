@@ -7,6 +7,7 @@ import { Money } from "@/lib/domain/money";
 import { listComments } from "@/lib/services/comments";
 import { contactPhotoUrl, listContacts } from "@/lib/services/contacts";
 import {
+  customerLogoUrl,
   getCustomer,
   getCustomerMails,
   getCustomerReceivables,
@@ -130,9 +131,21 @@ export default async function CustomerWorkspacePage({
         All customers
       </Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="font-heading text-xl font-semibold text-foreground">
-          {customer.name}
-        </h1>
+        <div className="flex items-center gap-3">
+          <Avatar className="size-11 rounded-md">
+            <AvatarImage
+              src={customerLogoUrl(customer.logoKey) ?? undefined}
+              alt=""
+              className="object-contain"
+            />
+            <AvatarFallback className="rounded-md bg-primary/10 text-sm font-semibold text-primary">
+              {customer.name[0]?.toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <h1 className="font-heading text-xl font-semibold text-foreground">
+            {customer.name}
+          </h1>
+        </div>
         <div className="flex items-center gap-2">
           {can(role, "customer.update") && (
             <Button asChild variant="outline" size="sm">

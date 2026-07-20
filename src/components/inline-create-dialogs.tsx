@@ -105,6 +105,14 @@ export function NewCustomerDialog({
               </SelectContent>
             </Select>
           </div>
+          <a
+            href={`/orgs/${organizationId}/customers/new`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Need address, contacts, or a logo? Open the full customer form ↗
+          </a>
           <DialogFooter>
             <Button
               type="button"
@@ -217,6 +225,14 @@ export function NewProductDialog({
               </Select>
             </div>
           </div>
+          <a
+            href={`/orgs/${organizationId}/products/new`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Need a description, unit, or image? Open the full product form ↗
+          </a>
           <DialogFooter>
             <Button
               type="button"

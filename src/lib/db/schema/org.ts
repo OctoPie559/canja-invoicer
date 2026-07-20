@@ -34,6 +34,8 @@ export const organizationSettings = pgTable("organization_settings", {
   // prefilled into the builder for new invoices; editable per document
   defaultInvoiceNotes: text("default_invoice_notes"),
   defaultInvoiceTerms: text("default_invoice_terms"),
+  // onboarding data collection (issue 1): where the org's creator found us
+  referralSource: text("referral_source"),
   ...timestamps,
   ...softDelete,
   ...optimisticLock,

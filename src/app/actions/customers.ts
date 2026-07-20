@@ -9,10 +9,42 @@ import {
   createCustomer,
   deleteCustomer,
   updateCustomer,
+  uploadCustomerLogo,
 } from "@/lib/services/customers";
 import type { CreateCustomerInput } from "@/lib/validation/customers";
 import { requireSession, userActor } from "@/lib/transport/session";
+import type { ActorContext } from "@/lib/audit/context";
 import type { ActionState } from "./organizations";
+
+/** Best-effort logo attach (issue 13): a storage hiccup never fails the save;
+ *  the customer is created/updated regardless and the logo is retryable. */
+async function attachLogo(
+  ctx: ActorContext,
+  customerId: string,
+  formData: FormData,
+): Promise<void> {
+  const logo = formData.get("logo");
+  if (!(logo instanceof File) || logo.size === 0) return;
+  try {
+    const bytes = new Uint8Array(await logo.arrayBuffer());
+    await runWithActor(ctx, () =>
+      uploadCustomerLogo(getDb(), ctx, {
+        customerId,
+        bytes,
+        contentType: logo.type,
+      }),
+    );
+  } catch (err) {
+    console.warn("customer logo upload failed", err);
+  }
+}
+
+/** Parse the optional contact-grid JSON the customer form submits. */
+function parseContacts(formData: FormData): unknown {
+  const raw = String(formData.get("contacts") ?? "");
+  if (!raw) return undefined;
+  return JSON.parse(raw);
+}
 
 /** Thin wrappers (ARCHITECTURE.md §1.2): auth → ctx → one service → map. */
 
@@ -50,18 +82,6 @@ function customerFields(formData: FormData) {
   };
 }
 
-/** Optional inline primary contact from the create form. */
-function inlinePrimaryContact(formData: FormData) {
-  const firstName = String(formData.get("contactFirstName") ?? "").trim();
-  if (!firstName) return null;
-  return {
-    firstName,
-    lastName: String(formData.get("contactLastName") ?? ""),
-    email: String(formData.get("contactEmail") ?? ""),
-    mobile: String(formData.get("contactMobile") ?? ""),
-  };
-}
-
 export async function createCustomerAction(
   organizationId: string,
   _prev: ActionState,
@@ -71,16 +91,25 @@ export async function createCustomerAction(
   const ctx = await userActor(session.user.id, organizationId);
   let customerId: string;
   try {
+    let contactRows: unknown;
+    try {
+      contactRows = parseContacts(formData);
+    } catch {
+      return { error: "Invalid contact persons payload" };
+    }
     const result = await runWithActor(ctx, () =>
-      createCustomer(getDb(), ctx, {
-        ...customerFields(formData),
-        primaryContact: inlinePrimaryContact(formData),
-      }),
+      createCustomer(
+        getDb(),
+        ctx,
+        customerFields(formData),
+        contactRows as never,
+      ),
     );
     customerId = result.customerId;
   } catch (error) {
     return mapError(error);
   }
+  await attachLogo(ctx, customerId, formData);
   redirect(`/orgs/${organizationId}/customers/${customerId}`);
 }
 
@@ -104,10 +133,7 @@ export async function createCustomerInlineAction(
   try {
     const fields = customerFields(formData);
     const { customerId } = await runWithActor(ctx, () =>
-      createCustomer(getDb(), ctx, {
-        ...fields,
-        primaryContact: inlinePrimaryContact(formData),
-      }),
+      createCustomer(getDb(), ctx, fields),
     );
     return {
       customer: {
@@ -133,14 +159,11 @@ export async function updateCustomerAction(
   try {
     // optional contact-grid payload — saved in the same transaction as the
     // company fields (service validates the parsed rows with Zod)
-    const contactsRaw = String(formData.get("contacts") ?? "");
     let contactRows: unknown;
-    if (contactsRaw) {
-      try {
-        contactRows = JSON.parse(contactsRaw);
-      } catch {
-        return { error: "Invalid contact persons payload" };
-      }
+    try {
+      contactRows = parseContacts(formData);
+    } catch {
+      return { error: "Invalid contact persons payload" };
     }
     await runWithActor(ctx, () =>
       updateCustomer(
@@ -157,6 +180,7 @@ export async function updateCustomerAction(
   } catch (error) {
     return mapError(error);
   }
+  await attachLogo(ctx, id, formData);
   redirect(`/orgs/${organizationId}/customers/${id}`);
 }
 

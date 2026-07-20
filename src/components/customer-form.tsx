@@ -10,9 +10,12 @@ import {
 } from "@/app/actions/customers";
 import { PAYMENT_TERMS_PRESETS } from "@/lib/domain/payment-terms";
 import { SUPPORTED_CURRENCIES } from "@/lib/validation/currencies";
+import { validateImageFile } from "@/lib/storage/images";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CountrySelect } from "@/components/country-select";
+import { PhoneInput } from "@/components/phone-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -137,7 +140,6 @@ function ContactRowsEditor({
             <div className="space-y-1">
               <Label>First name</Label>
               <Input
-                required
                 value={row.firstName ?? ""}
                 onChange={(e) => patch(row.key, { firstName: e.target.value })}
               />
@@ -159,20 +161,16 @@ function ContactRowsEditor({
             </div>
             <div className="space-y-1">
               <Label>Work phone</Label>
-              <Input
-                type="tel"
-                placeholder="+2547…"
+              <PhoneInput
                 value={row.workPhone ?? ""}
-                onChange={(e) => patch(row.key, { workPhone: e.target.value })}
+                onChange={(v) => patch(row.key, { workPhone: v })}
               />
             </div>
             <div className="space-y-1">
               <Label>Mobile</Label>
-              <Input
-                type="tel"
-                placeholder="+2547…"
+              <PhoneInput
                 value={row.mobile ?? ""}
-                onChange={(e) => patch(row.key, { mobile: e.target.value })}
+                onChange={(v) => patch(row.key, { mobile: v })}
               />
             </div>
             <div className="space-y-1">
@@ -214,22 +212,31 @@ export function CustomerForm({
   organizationId,
   customer,
   contacts,
+  logoUrl,
   cancelHref,
 }: {
   organizationId: string;
   customer?: CustomerFormValues;
-  /** Existing contact persons (edit mode) — editable in the same save. */
+  /** Existing contact persons — editable in the same save (both modes). */
   contacts?: ContactRowValues[];
+  /** Current logo public URL (edit mode), for preview. */
+  logoUrl?: string | null;
   cancelHref: string;
 }) {
   const editing = Boolean(customer?.id);
-  const [contactRows, setContactRows] = useState<ContactRowState[]>(
-    (contacts ?? []).map((c) => ({
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [contactRows, setContactRows] = useState<ContactRowState[]>(() => {
+    const rows = (contacts ?? []).map((c) => ({
       ...c,
       key: c.id ?? crypto.randomUUID(),
       deleted: false,
-    })),
-  );
+    }));
+    // start a new customer with one primary row ready to fill (issue 12)
+    if (!editing && rows.length === 0) {
+      rows.push({ key: crypto.randomUUID(), deleted: false, isPrimary: true });
+    }
+    return rows;
+  });
   const [state, action, pending] = useActionState(
     (editing ? updateCustomerAction : createCustomerAction).bind(
       null,
@@ -238,24 +245,27 @@ export function CustomerForm({
     initialState,
   );
 
-  const contactsPayload = editing
-    ? JSON.stringify(
-        contactRows.map((row) => ({
-          id: row.id,
-          version: row.version,
-          salutation: row.salutation,
-          firstName: row.firstName ?? "",
-          lastName: row.lastName,
-          email: row.email,
-          workPhone: row.workPhone,
-          mobile: row.mobile,
-          designation: row.designation,
-          department: row.department,
-          isPrimary: row.isPrimary ?? false,
-          deleted: row.deleted,
-        })),
-      )
-    : "";
+  const contactsPayload = JSON.stringify(
+    contactRows
+      // drop untouched empty rows (the seeded primary, or half-added ones);
+      // keep existing rows even when cleared so deletions still apply
+      .filter((row) => row.deleted || row.id || (row.firstName ?? "").trim() !== "")
+      .map((row) => ({
+      id: row.id,
+      version: row.version,
+      salutation: row.salutation,
+      firstName: row.firstName ?? "",
+      lastName: row.lastName,
+      email: row.email,
+      workPhone: row.workPhone,
+      mobile: row.mobile,
+      designation: row.designation,
+      department: row.department,
+      isPrimary: row.isPrimary ?? false,
+      deleted: row.deleted,
+    })),
+  );
+  const contactCount = contactRows.filter((r) => !r.deleted).length;
 
   return (
     <form action={action} className="space-y-6">
@@ -264,11 +274,11 @@ export function CustomerForm({
           <AlertDescription>{state.error}</AlertDescription>
         </Alert>
       )}
+      <input type="hidden" name="contacts" value={contactsPayload} />
       {editing && (
         <>
           <input type="hidden" name="id" value={customer!.id} />
           <input type="hidden" name="version" value={customer!.version} />
-          <input type="hidden" name="contacts" value={contactsPayload} />
         </>
       )}
 
@@ -276,13 +286,9 @@ export function CustomerForm({
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="address">Address</TabsTrigger>
-          {editing && (
-            <TabsTrigger value="contacts">
-              Contact persons
-              {contactRows.filter((r) => !r.deleted).length > 0 &&
-                ` (${contactRows.filter((r) => !r.deleted).length})`}
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="contacts">
+            Contact persons{contactCount > 0 && ` (${contactCount})`}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="details" className="space-y-4 pt-2">
@@ -348,34 +354,37 @@ export function CustomerForm({
             </div>
           </div>
 
-          {!editing && (
-            <fieldset className="space-y-4 border-t pt-4">
-              <legend className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
-                Primary contact person (optional)
-              </legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="pc-first">First name</Label>
-                  <Input id="pc-first" name="contactFirstName" />
+          <div className="space-y-2">
+            <Label htmlFor="c-logo">Logo</Label>
+            <div className="flex items-center gap-4">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- R2-hosted
+                <img
+                  src={logoUrl}
+                  alt=""
+                  className="h-12 w-12 rounded border bg-white object-contain p-1"
+                />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded border border-dashed text-[10px] text-muted-foreground">
+                  Logo
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pc-last">Last name</Label>
-                  <Input id="pc-last" name="contactLastName" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pc-email">Email</Label>
-                  <Input id="pc-email" name="contactEmail" type="email" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pc-mobile">Mobile</Label>
-                  <Input id="pc-mobile" name="contactMobile" type="tel" placeholder="+2547…" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                More people can be added when editing the customer.
-              </p>
-            </fieldset>
-          )}
+              )}
+              <Input
+                id="c-logo"
+                type="file"
+                name="logo"
+                accept="image/png,image/jpeg"
+                className="max-w-xs"
+                onChange={(e) =>
+                  setLogoError(validateImageFile(e.target.files?.[0] ?? null))
+                }
+              />
+            </div>
+            {logoError && <p className="text-xs text-destructive">{logoError}</p>}
+            <p className="text-xs text-muted-foreground">
+              PNG or JPEG, up to 512 KB. Shown on the customer overview.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="c-notes">Notes</Label>
@@ -403,7 +412,7 @@ export function CustomerForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="c-country">Country</Label>
-                <Input id="c-country" name="country" defaultValue={customer?.country ?? ""} />
+                <CountrySelect id="c-country" name="country" defaultValue={customer?.country} />
               </div>
             </div>
           </fieldset>
@@ -426,21 +435,23 @@ export function CustomerForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="c-ship-country">Country</Label>
-                <Input id="c-ship-country" name="shippingCountry" defaultValue={customer?.shippingCountry ?? ""} />
+                <CountrySelect
+                  id="c-ship-country"
+                  name="shippingCountry"
+                  defaultValue={customer?.shippingCountry}
+                />
               </div>
             </div>
           </fieldset>
         </TabsContent>
 
-        {editing && (
-          <TabsContent value="contacts" className="pt-2">
-            <ContactRowsEditor rows={contactRows} onChange={setContactRows} />
-          </TabsContent>
-        )}
+        <TabsContent value="contacts" className="pt-2">
+          <ContactRowsEditor rows={contactRows} onChange={setContactRows} />
+        </TabsContent>
       </Tabs>
 
       <div className="flex items-center gap-2 border-t pt-4">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || logoError !== null}>
           {pending ? "Saving…" : editing ? "Save changes" : "Create customer"}
         </Button>
         <Button asChild type="button" variant="outline">

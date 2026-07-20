@@ -15,7 +15,31 @@ import {
 import { StorageNotConfiguredError } from "@/lib/storage/port";
 import { revalidatePath } from "next/cache";
 import { requireSession, userActor } from "@/lib/transport/session";
+import type { ActorContext } from "@/lib/audit/context";
 import type { ActionState } from "./organizations";
+
+/** Best-effort image attach (issue 11): a storage hiccup never fails the save;
+ *  the product is created/updated regardless and the image is retryable. */
+async function attachImage(
+  ctx: ActorContext,
+  productId: string,
+  formData: FormData,
+): Promise<void> {
+  const image = formData.get("image");
+  if (!(image instanceof File) || image.size === 0) return;
+  try {
+    const bytes = new Uint8Array(await image.arrayBuffer());
+    await runWithActor(ctx, () =>
+      uploadProductImage(getDb(), ctx, {
+        productId,
+        bytes,
+        contentType: image.type,
+      }),
+    );
+  } catch (err) {
+    console.warn("product image upload failed", err);
+  }
+}
 
 /** Thin wrappers (ARCHITECTURE.md §1.2): auth → ctx → one service → map. */
 
@@ -59,6 +83,7 @@ export async function createProductAction(
   } catch (error) {
     return mapError(error);
   }
+  await attachImage(ctx, productId, formData);
   redirect(`/orgs/${organizationId}/products/${productId}`);
 }
 
@@ -124,6 +149,7 @@ export async function updateProductAction(
   } catch (error) {
     return mapError(error);
   }
+  await attachImage(ctx, id, formData);
   redirect(`/orgs/${organizationId}/products/${id}`);
 }
 

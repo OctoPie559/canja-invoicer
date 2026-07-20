@@ -10,5 +10,7 @@ import { requireSession } from "@/lib/transport/session";
 export default async function DashboardPage() {
   const session = await requireSession();
   const orgs = await listUserOrganizations(getDb(), session.user.id);
-  redirect(orgs.length === 0 ? "/orgs/new" : `/orgs/${orgs[0].id}`);
+  // first-run (no org yet) → the guided onboarding wizard (issue 1);
+  // invited users already have a membership and skip straight to their org
+  redirect(orgs.length === 0 ? "/onboarding" : `/orgs/${orgs[0].id}`);
 }
