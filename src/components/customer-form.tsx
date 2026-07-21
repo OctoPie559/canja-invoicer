@@ -322,7 +322,15 @@ export function CustomerForm({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="details" className="space-y-4 pt-2">
+        {/* forceMount + hidden-when-inactive keeps EVERY tab's inputs in the
+            DOM so a save from any tab still submits the whole form (Radix
+            unmounts inactive tabs by default, which dropped required fields
+            like the name — issue 14). display:none controls still submit. */}
+        <TabsContent
+          value="details"
+          forceMount
+          className="space-y-4 pt-2 data-[state=inactive]:hidden"
+        >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="c-name">Name</Label>
@@ -423,7 +431,11 @@ export function CustomerForm({
           </div>
         </TabsContent>
 
-        <TabsContent value="address" className="space-y-6 pt-2">
+        <TabsContent
+          value="address"
+          forceMount
+          className="space-y-6 pt-2 data-[state=inactive]:hidden"
+        >
           <fieldset className="space-y-4">
             <legend className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
               Billing address
@@ -476,7 +488,11 @@ export function CustomerForm({
           </fieldset>
         </TabsContent>
 
-        <TabsContent value="contacts" className="pt-2">
+        <TabsContent
+          value="contacts"
+          forceMount
+          className="pt-2 data-[state=inactive]:hidden"
+        >
           <ContactRowsEditor rows={contactRows} onChange={setContactRows} />
         </TabsContent>
       </Tabs>
