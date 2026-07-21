@@ -9,6 +9,7 @@ import {
   getProductTimeline,
   getProductTransactions,
   getProductVersions,
+  priceChangeVersions,
   productImageUrl,
 } from "@/lib/services/products";
 import { ProductImage } from "@/components/product-image";
@@ -154,10 +155,10 @@ export default async function ProductWorkspacePage({
                 </div>
                 <div className="space-y-3">
                   <h3 className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
-                    Price & version history
+                    Price history
                   </h3>
                   <ul className="divide-y text-sm">
-                    {versions.map((v) => {
+                    {priceChangeVersions(versions).map((v) => {
                       const data = v.data as {
                         unitPriceMinor?: string;
                         currency?: string;
