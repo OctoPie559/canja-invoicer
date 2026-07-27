@@ -31,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn("font-sans", outfit.variable, bricolageGrotesque.variable)}>
       <script
-        src="https://ansera-cdn.syncra.co.ke/widget/v1/loader.js"
+        src="https://ansera-cdn.syncra.co.ke/widget/loader.js"
         data-agent-id="b1682af7-0ee2-492d-828d-5f1be08628c6"
         data-api-base="https://ansera-api.syncra.co.ke"
         async
