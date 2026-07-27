@@ -12,7 +12,9 @@ import {
   initiateInvoiceCharge,
   initiateSubscriptionCharge,
 } from "@/lib/services/checkout";
+import { cancelSubscription } from "@/lib/services/subscriptions";
 import { requestMeta, requireSession, userActor } from "@/lib/transport/session";
+import { revalidatePath } from "next/cache";
 import type { ActionState } from "./organizations";
 
 /** Thin wrappers (ARCHITECTURE.md §1.2): auth → ctx → one service → redirect. */
@@ -86,4 +88,19 @@ export async function startSubscriptionCheckoutAction(
     return mapError(error);
   }
   redirect(url);
+}
+
+/** Owner: schedule cancellation at period end (wave 6). Stays Pro until then. */
+export async function cancelSubscriptionAction(
+  organizationId: string,
+): Promise<ActionState> {
+  const session = await requireSession();
+  const ctx = await userActor(session.user.id, organizationId);
+  try {
+    await runWithActor(ctx, () => cancelSubscription(getDb(), ctx));
+  } catch (error) {
+    return mapError(error);
+  }
+  revalidatePath(`/orgs/${organizationId}/settings/billing`);
+  return { error: null };
 }

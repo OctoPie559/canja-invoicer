@@ -6,6 +6,7 @@ import { getSubscription } from "@/lib/services/subscriptions";
 import { isPaymentsConfigured } from "@/lib/payments";
 import { requireMembership } from "@/lib/transport/org";
 import { UpgradePlan } from "@/components/upgrade-plan";
+import { CancelSubscriptionButton } from "@/components/cancel-subscription-button";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -91,12 +92,28 @@ export default async function BillingSettingsPage({
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">Renews / expires</dt>
+                <dt className="text-muted-foreground">
+                  {subscription.cancelAtPeriodEnd
+                    ? "Cancels on"
+                    : subscription.renewalMode === "auto"
+                      ? "Renews automatically on"
+                      : "Expires on"}
+                </dt>
                 <dd className="font-medium">
                   {dateFmt.format(subscription.currentPeriodEnd)}
                 </dd>
               </div>
             </dl>
+          )}
+
+          {isPro && subscription.cancelAtPeriodEnd && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+              Your plan is set to cancel and will move to Free on{" "}
+              {subscription.currentPeriodEnd
+                ? dateFmt.format(subscription.currentPeriodEnd)
+                : "the period end"}
+              . You keep every Pro feature until then.
+            </p>
           )}
 
           <ul className="grid gap-2 text-sm sm:grid-cols-2">
@@ -107,8 +124,15 @@ export default async function BillingSettingsPage({
               </li>
             ))}
           </ul>
+
+          {isPro && canManage && !subscription.cancelAtPeriodEnd && (
+            <div className="border-t pt-4">
+              <CancelSubscriptionButton organizationId={orgId} />
+            </div>
+          )}
         </CardContent>
       </Card>
+
 
       {!isPro && (
         <Card>

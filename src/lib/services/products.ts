@@ -556,3 +556,26 @@ export function productImageUrl(
     return null;
   }
 }
+
+/**
+ * The subset of versions where the PRICE actually changed from the version
+ * before it — a true price history (issue 15). A version row is written for
+ * any edit (name, description, image, …), so listing every version made
+ * unchanged prices look like repeated "price changes"; general edit history
+ * already lives in the activity timeline. Input may be in any order; output
+ * preserves it.
+ */
+export function priceChangeVersions<
+  T extends { version: number; data: unknown },
+>(versions: T[]): T[] {
+  const key = (v: T): string => {
+    const d = v.data as { unitPriceMinor?: string; currency?: string } | null;
+    return d?.unitPriceMinor && d?.currency
+      ? `${d.currency}:${d.unitPriceMinor}`
+      : "—";
+  };
+  const byVersion = new Map(versions.map((v) => [v.version, key(v)]));
+  // keep a version when its price differs from version-1 (the initial version
+  // has no predecessor, so it is always kept)
+  return versions.filter((v) => byVersion.get(v.version - 1) !== key(v));
+}

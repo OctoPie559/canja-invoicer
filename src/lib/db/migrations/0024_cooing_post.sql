@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" DROP COLUMN "subscription_email_token";
