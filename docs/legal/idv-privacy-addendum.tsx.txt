@@ -1,0 +1,59 @@
+// Parked until an IDV provider is actually integrated.
+// Drop back into src/app/(legal)/privacy/page.tsx, renumber the sections,
+// and restore: the Veriff sub-processor row, the explicit-consent row in
+// the legal-basis table, the retention entry, and Terms section 5.
+
+      <Section id="idv" heading="5. Identity verification and biometric data">
+        <p>
+          To meet our legal and fraud-prevention obligations, we ask some users
+          to verify their identity. The check is carried out by{" "}
+          <strong>Veriff OÜ</strong>, an identity verification provider
+          established in Estonia, acting as our processor.
+        </p>
+        <p>During a verification, Veriff collects and processes:</p>
+        <List
+          items={[
+            "Images or video of your identity document (passport, national ID, driving licence or residence permit), and the data printed or encoded on it — including document number, date of birth, nationality and expiry date.",
+            "An image or video of your face, and the biometric measurements derived from it in order to confirm that you are a real, live person and that you match the document.",
+            "Where you use the upload option instead of the guided flow, the files you upload.",
+            "Technical signals about the device and network used, for fraud detection.",
+          ]}
+        />
+        <p>
+          Facial images processed for the purpose of uniquely identifying you
+          are <strong>biometric data</strong>. Under the DPA this is sensitive
+          personal data, and under GDPR Article 9 it is a special category of
+          personal data. We rely on your{" "}
+          <strong>explicit consent</strong> to process it. You give that consent
+          before the check begins, and we record when you gave it. You can
+          refuse — but we may then be unable to offer you features that depend
+          on a verified identity.
+        </p>
+
+        <Sub heading="Automated decision-making" />
+        <p>
+          Veriff&apos;s decision is produced substantially by automated means,
+          and it can affect whether you may use parts of Canja. You have the
+          right not to be subject to a decision based solely on automated
+          processing where it produces legal or similarly significant effects.
+          If you are declined, you may contact us at{" "}
+          support@syncra.co.ke to obtain human review, to
+          express your point of view, and to contest the outcome.
+        </p>
+
+        <Sub heading="What we keep" />
+        <p>
+          We store only the outcome of the check — whether it passed, when it
+          happened, and Veriff&apos;s session reference. We do not store your
+          document images or your face image on our own systems. We keep that
+          outcome for seven years after your account closes, because it
+          evidences the identity checks we are required to perform.
+        </p>
+        <p>
+          Veriff holds the images, video and extracted document data under its
+          own retention schedule and its contract with us. That period is
+          currently 12 months from the date of the verification, after which
+          Veriff deletes them.
+        </p>
+      </Section>
+
