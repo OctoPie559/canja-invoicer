@@ -22,6 +22,14 @@ export default function AuthLayout({
         </div>
         <footer className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>© 2026 Canja. All rights reserved.</span>
+          <span className="flex gap-4">
+            <a href="/terms" className="hover:text-foreground">
+              Terms
+            </a>
+            <a href="/privacy" className="hover:text-foreground">
+              Privacy
+            </a>
+          </span>
         </footer>
       </div>
 
