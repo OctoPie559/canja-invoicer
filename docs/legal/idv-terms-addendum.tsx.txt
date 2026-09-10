@@ -1,0 +1,23 @@
+// Parked until an IDV provider is actually integrated.
+// Restore as Terms section 5 and renumber the sections after it.
+
+      <Section id="verification" heading="5. Identity verification">
+        <p>
+          We may require you to verify your identity before you use certain
+          features, and we may re-verify you later. Verification is carried out
+          by our provider Veriff and involves photographing an identity document
+          and your face; the biometric elements of that check need your explicit
+          consent, explained in our{" "}
+          <Link href="/privacy#idv" className="underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
+        <p>
+          We may suspend or refuse access if you decline verification, if
+          verification fails, or if we reasonably suspect the documents provided
+          are not genuine or not yours. If an automated check declines you, you
+          may ask us to review it by a human.
+        </p>
+      </Section>
+

@@ -83,6 +83,25 @@ export default function SignupPage() {
           className="h-11"
         />
       </div>
+      <label className="flex items-start gap-2 text-sm text-muted-foreground">
+        <input
+          type="checkbox"
+          name="terms"
+          required
+          className="mt-0.5 size-4 shrink-0 rounded border-input accent-primary"
+        />
+        <span>
+          I agree to the{" "}
+          <Link href="/terms" target="_blank" className="underline underline-offset-2 hover:text-foreground">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" target="_blank" className="underline underline-offset-2 hover:text-foreground">
+            Privacy Policy
+          </Link>
+          .
+        </span>
+      </label>
       <Button type="submit" disabled={pending} className="h-11 w-full">
         {pending ? "Creating…" : "Create account"}
       </Button>

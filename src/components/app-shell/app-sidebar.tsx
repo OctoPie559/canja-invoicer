@@ -130,6 +130,14 @@ export function AppSidebar({
             upgradeHref={upgradeHref}
           />
         </SidebarGroup>
+        <div className="flex justify-center gap-3 px-2 pb-2 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <Link href="/terms" className="hover:text-foreground">
+            Terms
+          </Link>
+          <Link href="/privacy" className="hover:text-foreground">
+            Privacy
+          </Link>
+        </div>
       </SidebarContent>
       <SidebarRail />
     </Sidebar>
